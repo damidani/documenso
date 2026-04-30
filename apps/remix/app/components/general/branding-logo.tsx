@@ -2,13 +2,7 @@ import type { SVGAttributes } from 'react';
 
 export type LogoProps = SVGAttributes<SVGSVGElement>;
 
-import { APP_LOGO_URL } from '@documenso/lib/constants/app';
-
 export const BrandingLogo = ({ ...props }: LogoProps) => {
-  if (APP_LOGO_URL) {
-    return <img src={APP_LOGO_URL} alt="Logo" {...props} />;
-  }
-
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2248 320" {...props}>
       <path

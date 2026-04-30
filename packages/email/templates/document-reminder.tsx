@@ -6,7 +6,6 @@ import { RECIPIENT_ROLES_DESCRIPTION } from '@documenso/lib/constants/recipient-
 
 import { Body, Container, Head, Hr, Html, Img, Preview, Section, Text } from '../components';
 import { useBranding } from '../providers/branding';
-import { APP_LOGO_URL } from '@documenso/lib/constants/app';
 import { TemplateCustomMessageBody } from '../template-components/template-custom-message-body';
 import { TemplateDocumentReminder } from '../template-components/template-document-reminder';
 import { TemplateFooter } from '../template-components/template-footer';
@@ -23,7 +22,7 @@ export type DocumentReminderEmailTemplateProps = {
 export const DocumentReminderEmailTemplate = ({
   recipientName = 'John Doe',
   documentName = 'Open Source Pledge.pdf',
-  signDocumentLink = 'https://hcloud.fr',
+  signDocumentLink = 'https://documenso.com',
   assetBaseUrl = 'http://localhost:3002',
   customBody,
   role = RecipientRole.SIGNER,
@@ -52,8 +51,8 @@ export const DocumentReminderEmailTemplate = ({
                 <Img src={branding.brandingLogo} alt="Branding Logo" className="mb-4 h-6" />
               ) : (
                 <Img
-                  src={APP_LOGO_URL || getAssetUrl('/static/logo.png')}
-                  alt="Logo"
+                  src={getAssetUrl('/static/logo.png')}
+                  alt="Documenso Logo"
                   className="mb-4 h-6"
                 />
               )}

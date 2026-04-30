@@ -6,7 +6,6 @@ import { formatTeamUrl } from '@documenso/lib/utils/teams';
 
 import { Body, Container, Head, Hr, Html, Img, Preview, Section, Text } from '../components';
 import { useBranding } from '../providers/branding';
-import { APP_LOGO_URL } from '@documenso/lib/constants/app';
 import { TemplateFooter } from '../template-components/template-footer';
 import TemplateImage from '../template-components/template-image';
 
@@ -20,15 +19,15 @@ export type TeamEmailRemovedTemplateProps = {
 
 export const TeamEmailRemovedTemplate = ({
   assetBaseUrl = 'http://localhost:3002',
-  baseUrl = 'https://hcloud.fr',
-  teamEmail = 'example@hcloud.fr',
+  baseUrl = 'https://documenso.com',
+  teamEmail = 'example@documenso.com',
   teamName = 'Team Name',
   teamUrl = 'demo',
 }: TeamEmailRemovedTemplateProps) => {
   const { _ } = useLingui();
   const branding = useBranding();
 
-  const previewText = msg`Team email removed for ${teamName}`;
+  const previewText = msg`Team email removed for ${teamName} on Documenso`;
 
   return (
     <Html>

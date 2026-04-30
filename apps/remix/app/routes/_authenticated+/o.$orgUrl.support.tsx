@@ -53,7 +53,7 @@ export default function SupportPage() {
             <h2 className="flex items-center gap-2 text-lg font-bold">
               <BookIcon className="h-5 w-5 text-muted-foreground" />
               <Link
-                to="https://hcloud.fr/docs"
+                to="https://docs.documenso.com"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:underline"

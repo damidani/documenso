@@ -4,8 +4,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react/macro';
 import { Trans } from '@lingui/react/macro';
-
-import { APP_NAME } from '@documenso/lib/constants/app';
 import {
   DocumentDistributionMethod,
   DocumentVisibility,
@@ -844,7 +842,7 @@ export const EnvelopeEditorSettingsDialog = ({
                                           </SelectItem>
                                         ))}
 
-                                        <SelectItem value={'-1'}>{APP_NAME}</SelectItem>
+                                        <SelectItem value={'-1'}>Documenso</SelectItem>
                                       </SelectContent>
                                     </Select>
                                   </FormControl>

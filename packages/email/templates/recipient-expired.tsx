@@ -3,7 +3,6 @@ import { useLingui } from '@lingui/react';
 
 import { Body, Container, Head, Hr, Html, Img, Preview, Section } from '../components';
 import { useBranding } from '../providers/branding';
-import { APP_LOGO_URL } from '@documenso/lib/constants/app';
 import { TemplateFooter } from '../template-components/template-footer';
 import type { TemplateRecipientExpiredProps } from '../template-components/template-recipient-expired';
 import { TemplateRecipientExpired } from '../template-components/template-recipient-expired';
@@ -14,7 +13,7 @@ export const RecipientExpiredTemplate = ({
   documentName = 'Open Source Pledge.pdf',
   recipientName = 'John Doe',
   recipientEmail = 'john@example.com',
-  documentLink = 'https://hcloud.fr',
+  documentLink = 'https://documenso.com',
   assetBaseUrl = 'http://localhost:3002',
 }: RecipientExpiredEmailTemplateProps) => {
   const { _ } = useLingui();
@@ -39,8 +38,8 @@ export const RecipientExpiredTemplate = ({
                 <Img src={branding.brandingLogo} alt="Branding Logo" className="mb-4 h-6" />
               ) : (
                 <Img
-                  src={APP_LOGO_URL || getAssetUrl('/static/logo.png')}
-                  alt="Logo"
+                  src={getAssetUrl('/static/logo.png')}
+                  alt="Documenso Logo"
                   className="mb-4 h-6"
                 />
               )}

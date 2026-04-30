@@ -3,8 +3,6 @@ import { useState } from 'react';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-
-import { APP_NAME } from '@documenso/lib/constants/app';
 import { SubscriptionStatus } from '@prisma/client';
 import { AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router';
@@ -147,7 +145,7 @@ export const OrganisationBillingBanner = () => {
                 <DialogDescription>
                   <Trans>
                     Your plan is no longer valid. Please subscribe to a new plan to continue using
-                    {APP_NAME}.
+                    Documenso.
                   </Trans>
                 </DialogDescription>
               </DialogHeader>

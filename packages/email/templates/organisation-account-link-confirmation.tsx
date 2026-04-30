@@ -15,7 +15,6 @@ import {
   Text,
 } from '../components';
 import { useBranding } from '../providers/branding';
-import { APP_LOGO_URL } from '@documenso/lib/constants/app';
 import { TemplateFooter } from '../template-components/template-footer';
 import TemplateImage from '../template-components/template-image';
 
@@ -38,7 +37,7 @@ export const OrganisationAccountLinkConfirmationTemplate = ({
   const previewText =
     type === 'create'
       ? msg`A request has been made to create an account for you`
-      : msg`A request has been made to link your account`;
+      : msg`A request has been made to link your Documenso account`;
 
   return (
     <Html>
@@ -70,7 +69,7 @@ export const OrganisationAccountLinkConfirmationTemplate = ({
                 {type === 'create' ? (
                   <Trans>Account creation request</Trans>
                 ) : (
-                  <Trans>Link your account</Trans>
+                  <Trans>Link your Documenso account</Trans>
                 )}
               </Text>
 
@@ -83,7 +82,7 @@ export const OrganisationAccountLinkConfirmationTemplate = ({
                 ) : (
                   <Trans>
                     <span className="font-bold">{organisationName}</span> has requested to link your
-                    current account to their organisation.
+                    current Documenso account to their organisation.
                   </Trans>
                 )}
               </Text>
@@ -111,7 +110,7 @@ export const OrganisationAccountLinkConfirmationTemplate = ({
 
                 <Text className="mt-2 text-sm">
                   <Trans>
-                    You can unlink your account at any time in your security settings{' '}
+                    You can unlink your account at any time in your security settings on Documenso{' '}
                     <Link href={`${assetBaseUrl}/settings/security/linked-accounts`}>here.</Link>
                   </Trans>
                 </Text>

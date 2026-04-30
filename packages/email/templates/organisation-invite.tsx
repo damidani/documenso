@@ -15,7 +15,6 @@ import {
   Text,
 } from '../components';
 import { useBranding } from '../providers/branding';
-import { APP_LOGO_URL } from '@documenso/lib/constants/app';
 import { TemplateFooter } from '../template-components/template-footer';
 import TemplateImage from '../template-components/template-image';
 
@@ -29,7 +28,7 @@ export type OrganisationInviteEmailProps = {
 
 export const OrganisationInviteEmailTemplate = ({
   assetBaseUrl = 'http://localhost:3002',
-  baseUrl = 'https://hcloud.fr',
+  baseUrl = 'https://documenso.com',
   senderName = 'John Doe',
   organisationName = 'Organisation Name',
   token = '',
@@ -37,7 +36,7 @@ export const OrganisationInviteEmailTemplate = ({
   const { _ } = useLingui();
   const branding = useBranding();
 
-  const previewText = msg`Accept invitation to join an organisation`;
+  const previewText = msg`Accept invitation to join an organisation on Documenso`;
 
   return (
     <Html>
@@ -67,7 +66,7 @@ export const OrganisationInviteEmailTemplate = ({
 
             <Section className="p-2 text-slate-500">
               <Text className="text-center text-lg font-medium text-black">
-                <Trans>Join {organisationName}</Trans>
+                <Trans>Join {organisationName} on Documenso</Trans>
               </Text>
 
               <Text className="my-1 text-center text-base">

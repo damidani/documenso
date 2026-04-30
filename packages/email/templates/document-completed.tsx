@@ -3,7 +3,6 @@ import { useLingui } from '@lingui/react';
 
 import { Body, Container, Head, Html, Img, Preview, Section } from '../components';
 import { useBranding } from '../providers/branding';
-import { APP_LOGO_URL } from '@documenso/lib/constants/app';
 import type { TemplateDocumentCompletedProps } from '../template-components/template-document-completed';
 import { TemplateDocumentCompleted } from '../template-components/template-document-completed';
 import { TemplateFooter } from '../template-components/template-footer';
@@ -13,7 +12,7 @@ export type DocumentCompletedEmailTemplateProps = Partial<TemplateDocumentComple
 };
 
 export const DocumentCompletedEmailTemplate = ({
-  downloadLink = 'https://hcloud.fr',
+  downloadLink = 'https://documenso.com',
   documentName = 'Open Source Pledge.pdf',
   assetBaseUrl = 'http://localhost:3002',
   customBody,
@@ -40,8 +39,8 @@ export const DocumentCompletedEmailTemplate = ({
                 <Img src={branding.brandingLogo} alt="Branding Logo" className="mb-4 h-6" />
               ) : (
                 <Img
-                  src={APP_LOGO_URL || getAssetUrl('/static/logo.png')}
-                  alt="Logo"
+                  src={getAssetUrl('/static/logo.png')}
+                  alt="Documenso Logo"
                   className="mb-4 h-6"
                 />
               )}
