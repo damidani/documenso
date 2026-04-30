@@ -4,11 +4,11 @@ import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
 
 export const appMetaTags = (title?: MessageDescriptor) => {
   const description =
-    'Join Documenso, the open signing infrastructure, and get a 10x better signing experience. Pricing starts at $30/mo. forever! Sign in now and enjoy a faster, smarter, and more beautiful document signing process. Integrates with your favorite tools, customizable, and expandable. Support our mission and become a part of our open-source community.';
+    'Rejoignez hSign, l\'infrastructure de signature d\'hCloud, et bénéficiez d\'une expérience de signature 10 fois plus performante. À partir de 0€ par mois, pour toujours ! Connectez-vous dès maintenant et profitez d\'un processus de signature de documents plus rapide, plus intelligent et plus élégant. Intégrable à vos outils préférés, personnalisable et évolutif..';
 
   return [
     {
-      title: title ? `${i18n._(title)} - Documenso` : 'Documenso',
+      title: title ? `${i18n._(title)} - hSign by hCloud` : 'hSign by hCloud',
     },
     {
       name: 'description',
@@ -17,11 +17,11 @@ export const appMetaTags = (title?: MessageDescriptor) => {
     {
       name: 'keywords',
       content:
-        'Documenso, open source, DocuSign alternative, document signing, open signing infrastructure, open-source community, fast signing, beautiful signing, smart templates',
+        'Signature éléctronique',
     },
     {
       name: 'author',
-      content: 'Documenso, Inc.',
+      content: 'hCloud (Damien Benedetti)',
     },
     {
       name: 'robots',
@@ -29,7 +29,7 @@ export const appMetaTags = (title?: MessageDescriptor) => {
     },
     {
       property: 'og:title',
-      content: 'Documenso - The Open Source DocuSign Alternative',
+      content: 'hSign - La signature électronique pour tous',
     },
     {
       property: 'og:description',
@@ -49,7 +49,7 @@ export const appMetaTags = (title?: MessageDescriptor) => {
     },
     {
       name: 'twitter:site',
-      content: '@documenso',
+      content: '@hcloud_fr',
     },
     {
       name: 'twitter:description',
