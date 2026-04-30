@@ -1,12 +1,14 @@
 import { TRPCError, initTRPC } from '@trpc/server';
-import SuperJSON from 'superjson';
 import type { AnyZodObject } from 'zod';
 
 import { AppError, genericErrorCodeToTrpcErrorCodeMap } from '@documenso/lib/errors/app-error';
 import { getApiTokenByToken } from '@documenso/lib/server-only/public-api/get-api-token-by-token';
+import type { TrpcApiLog } from '@documenso/lib/types/api-logs';
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
+import { alphaid } from '@documenso/lib/universal/id';
 import { isAdmin } from '@documenso/lib/utils/is-admin';
 
+import { dataTransformer } from '../utils/data-transformer';
 import type { TrpcContext } from './context';
 
 // Can't import type from trpc-to-openapi because it breaks build, not sure why.
@@ -33,9 +35,9 @@ const t = initTRPC
   .meta<TrpcRouteMeta>()
   .context<TrpcContext>()
   .create({
-    transformer: SuperJSON,
+    transformer: dataTransformer,
     errorFormatter(opts) {
-      const { shape, error } = opts;
+      const { shape, error, ctx } = opts;
 
       const originalError = error.cause;
 
@@ -44,6 +46,12 @@ const t = initTRPC
       // Default unknown errors to 400, since if you're throwing an AppError it is expected
       // that you already know what you're doing.
       if (originalError instanceof AppError) {
+        if (originalError.headers && ctx) {
+          for (const [headerKey, headerValue] of Object.entries(originalError.headers)) {
+            ctx.res.headers.append(headerKey, headerValue);
+          }
+        }
+
         data = {
           ...data,
           appError: AppError.toJSON(originalError),
@@ -65,11 +73,21 @@ const t = initTRPC
 /**
  * Middlewares
  */
-export const authenticatedMiddleware = t.middleware(async ({ ctx, next }) => {
+export const authenticatedMiddleware = t.middleware(async ({ ctx, next, path, meta }) => {
+  const infoToLog: TrpcApiLog = {
+    path,
+    auth: ctx.metadata.auth,
+    source: ctx.metadata.source,
+    trpcMiddleware: 'authenticated',
+    unverifiedTeamId: ctx.teamId,
+  };
+
   const authorizationHeader = ctx.req.headers.get('authorization');
 
+  const isApiV2 = Boolean(meta?.openapi?.path);
+
   // Taken from `authenticatedMiddleware` in `@documenso/api/v1/middleware/authenticated.ts`.
-  if (authorizationHeader) {
+  if (authorizationHeader && isApiV2) {
     // Support for both "Authorization: Bearer api_xxx" and "Authorization: api_xxx"
     const [token] = (authorizationHeader || '').split('Bearer ').filter((s) => s.length > 0);
 
@@ -79,11 +97,17 @@ export const authenticatedMiddleware = t.middleware(async ({ ctx, next }) => {
 
     const apiToken = await getApiTokenByToken({ token });
 
+    ctx.logger.info({
+      ...infoToLog,
+      userId: apiToken.user.id,
+      apiTokenId: apiToken.id,
+    } satisfies TrpcApiLog);
+
     return await next({
       ctx: {
         ...ctx,
         user: apiToken.user,
-        teamId: apiToken.teamId || undefined,
+        teamId: apiToken.teamId,
         session: null,
         metadata: {
           ...ctx.metadata,
@@ -111,9 +135,22 @@ export const authenticatedMiddleware = t.middleware(async ({ ctx, next }) => {
     });
   }
 
+  // Recreate the logger with a sub request ID to differentiate between batched requests.
+  const trpcSessionLogger = ctx.logger.child({
+    nonBatchedRequestId: alphaid(),
+  });
+
+  trpcSessionLogger.info({
+    ...infoToLog,
+    userId: ctx.user.id,
+    apiTokenId: null,
+  } satisfies TrpcApiLog);
+
   return await next({
     ctx: {
       ...ctx,
+      teamId: ctx.teamId || -1,
+      logger: trpcSessionLogger,
       user: ctx.user,
       session: ctx.session,
       metadata: {
@@ -129,10 +166,76 @@ export const authenticatedMiddleware = t.middleware(async ({ ctx, next }) => {
   });
 });
 
-export const maybeAuthenticatedMiddleware = t.middleware(async ({ ctx, next }) => {
+export const maybeAuthenticatedMiddleware = t.middleware(async ({ ctx, next, path, meta }) => {
+  // Recreate the logger with a sub request ID to differentiate between batched requests.
+  const trpcSessionLogger = ctx.logger.child({
+    nonBatchedRequestId: alphaid(),
+  });
+
+  const infoToLog: TrpcApiLog = {
+    path,
+    auth: ctx.metadata.auth,
+    source: ctx.metadata.source,
+    trpcMiddleware: 'maybeAuthenticated',
+    unverifiedTeamId: ctx.teamId,
+  };
+
+  const authorizationHeader = ctx.req.headers.get('authorization');
+
+  const isApiV2 = Boolean(meta?.openapi?.path);
+
+  // Taken from `authenticatedMiddleware` in `@documenso/api/v1/middleware/authenticated.ts`.
+  if (authorizationHeader && isApiV2) {
+    // Support for both "Authorization: Bearer api_xxx" and "Authorization: api_xxx"
+    const [token] = (authorizationHeader || '').split('Bearer ').filter((s) => s.length > 0);
+
+    if (!token) {
+      throw new Error('Token was not provided for authenticated middleware');
+    }
+
+    const apiToken = await getApiTokenByToken({ token });
+
+    ctx.logger.info({
+      ...infoToLog,
+      userId: apiToken.user.id,
+      apiTokenId: apiToken.id,
+    } satisfies TrpcApiLog);
+
+    return await next({
+      ctx: {
+        ...ctx,
+        user: apiToken.user,
+        teamId: apiToken.teamId,
+        session: null,
+        metadata: {
+          ...ctx.metadata,
+          auditUser: apiToken.team
+            ? {
+                id: null,
+                email: null,
+                name: apiToken.team.name,
+              }
+            : {
+                id: apiToken.user.id,
+                email: apiToken.user.email,
+                name: apiToken.user.name,
+              },
+          auth: 'api',
+        } satisfies ApiRequestMetadata,
+      },
+    });
+  }
+
+  trpcSessionLogger.info({
+    ...infoToLog,
+    userId: ctx.user?.id,
+    apiTokenId: null,
+  } satisfies TrpcApiLog);
+
   return await next({
     ctx: {
       ...ctx,
+      logger: trpcSessionLogger,
       user: ctx.user,
       session: ctx.session,
       metadata: {
@@ -150,7 +253,7 @@ export const maybeAuthenticatedMiddleware = t.middleware(async ({ ctx, next }) =
   });
 });
 
-export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
+export const adminMiddleware = t.middleware(async ({ ctx, next, path }) => {
   if (!ctx.session || !ctx.user) {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
@@ -167,9 +270,24 @@ export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
     });
   }
 
+  // Recreate the logger with a sub request ID to differentiate between batched requests.
+  const trpcSessionLogger = ctx.logger.child({
+    nonBatchedRequestId: alphaid(),
+  });
+
+  trpcSessionLogger.info({
+    path,
+    auth: ctx.metadata.auth,
+    source: ctx.metadata.source,
+    userId: ctx.user.id,
+    apiTokenId: null,
+    trpcMiddleware: 'admin',
+  } satisfies TrpcApiLog);
+
   return await next({
     ctx: {
       ...ctx,
+      logger: trpcSessionLogger,
       user: ctx.user,
       session: ctx.session,
       metadata: {
@@ -185,11 +303,34 @@ export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
   });
 });
 
+export const procedureMiddleware = t.middleware(async ({ ctx, next, path }) => {
+  // Recreate the logger with a sub request ID to differentiate between batched requests.
+  const trpcSessionLogger = ctx.logger.child({
+    nonBatchedRequestId: alphaid(),
+  });
+
+  trpcSessionLogger.info({
+    path,
+    auth: ctx.metadata.auth,
+    source: ctx.metadata.source,
+    userId: ctx.user?.id,
+    apiTokenId: null,
+    trpcMiddleware: 'procedure',
+  } satisfies TrpcApiLog);
+
+  return await next({
+    ctx: {
+      ...ctx,
+      logger: trpcSessionLogger,
+    },
+  });
+});
+
 /**
  * Routers and Procedures
  */
 export const router = t.router;
-export const procedure = t.procedure;
+export const procedure = t.procedure.use(procedureMiddleware);
 export const authenticatedProcedure = t.procedure.use(authenticatedMiddleware);
 // While this is functionally the same as `procedure`, it's useful for indicating purpose
 export const maybeAuthenticatedProcedure = t.procedure.use(maybeAuthenticatedMiddleware);

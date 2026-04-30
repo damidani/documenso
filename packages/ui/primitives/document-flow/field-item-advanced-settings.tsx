@@ -6,6 +6,7 @@ import { useLingui } from '@lingui/react';
 import { FieldType } from '@prisma/client';
 import { match } from 'ts-pattern';
 
+import { useAutoSave } from '@documenso/lib/client-only/hooks/use-autosave';
 import {
   type TBaseFieldMeta as BaseFieldMeta,
   type TCheckboxFieldMeta as CheckboxFieldMeta,
@@ -41,7 +42,6 @@ import { RadioFieldAdvancedSettings } from './field-items-advanced-settings/radi
 import { TextFieldAdvancedSettings } from './field-items-advanced-settings/text-field';
 
 export type FieldAdvancedSettingsProps = {
-  teamId?: number;
   title: MessageDescriptor;
   description: MessageDescriptor;
   field: FieldFormType;
@@ -49,6 +49,7 @@ export type FieldAdvancedSettingsProps = {
   onAdvancedSettings?: () => void;
   isDocumentPdfLoaded?: boolean;
   onSave?: (fieldState: FieldMeta) => void;
+  onAutoSave?: (fieldState: FieldMeta) => Promise<void>;
 };
 
 export type FieldMetaKeys =
@@ -121,6 +122,7 @@ const getDefaultState = (fieldType: FieldType): FieldMeta => {
         values: [],
         required: false,
         readOnly: false,
+        direction: 'vertical',
       };
     case FieldType.CHECKBOX:
       return {
@@ -130,6 +132,7 @@ const getDefaultState = (fieldType: FieldType): FieldMeta => {
         validationLength: 0,
         required: false,
         readOnly: false,
+        direction: 'vertical',
       };
     case FieldType.DROPDOWN:
       return {
@@ -146,7 +149,16 @@ const getDefaultState = (fieldType: FieldType): FieldMeta => {
 
 export const FieldAdvancedSettings = forwardRef<HTMLDivElement, FieldAdvancedSettingsProps>(
   (
-    { title, description, field, fields, onAdvancedSettings, isDocumentPdfLoaded = true, onSave },
+    {
+      title,
+      description,
+      field,
+      fields,
+      onAdvancedSettings,
+      isDocumentPdfLoaded = true,
+      onSave,
+      onAutoSave,
+    },
     ref,
   ) => {
     const { _ } = useLingui();
@@ -176,6 +188,24 @@ export const FieldAdvancedSettings = forwardRef<HTMLDivElement, FieldAdvancedSet
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [fieldMeta]);
+
+    const { scheduleSave } = useAutoSave(onAutoSave || (async () => {}));
+
+    const handleAutoSave = () => {
+      if (errors.length === 0) {
+        scheduleSave(fieldState);
+      }
+    };
+
+    // Auto-save to localStorage and schedule remote save when fieldState changes
+    useEffect(() => {
+      try {
+        localStorage.setItem(localStorageKey, JSON.stringify(fieldState));
+        handleAutoSave();
+      } catch (error) {
+        console.error('Failed to save to localStorage:', error);
+      }
+    }, [fieldState, localStorageKey, handleAutoSave]);
 
     const handleFieldChange = (
       key: FieldMetaKeys,
@@ -325,7 +355,10 @@ export const FieldAdvancedSettings = forwardRef<HTMLDivElement, FieldAdvancedSet
           )}
         </DocumentFlowFormContainerContent>
 
-        <DocumentFlowFormContainerFooter className="mt-auto">
+        <DocumentFlowFormContainerFooter
+          className="mt-auto"
+          data-testid="field-advanced-settings-footer"
+        >
           <DocumentFlowFormContainerActions
             goNextLabel={msg`Save`}
             goBackLabel={msg`Cancel`}

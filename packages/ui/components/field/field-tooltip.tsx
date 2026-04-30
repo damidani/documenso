@@ -29,7 +29,10 @@ const tooltipVariants = cva('font-semibold', {
 interface FieldToolTipProps extends VariantProps<typeof tooltipVariants> {
   children: React.ReactNode;
   className?: string;
-  field: Field;
+  field: Pick<
+    Field,
+    'id' | 'inserted' | 'fieldMeta' | 'positionX' | 'positionY' | 'width' | 'height' | 'page'
+  >;
 }
 
 /**
@@ -48,6 +51,7 @@ export function FieldToolTip({ children, color, className = '', field }: FieldTo
 
   return createPortal(
     <div
+      id="field-tooltip"
       className={cn('pointer-events-none absolute')}
       style={{
         top: `${coords.y}px`,
@@ -61,7 +65,7 @@ export function FieldToolTip({ children, color, className = '', field }: FieldTo
           <TooltipTrigger className="absolute inset-0 w-full"></TooltipTrigger>
 
           <TooltipContent
-            className={tooltipVariants({ color, className })}
+            className={tooltipVariants({ color, className: cn(className, 'z-40') })}
             sideOffset={2}
             onClick={onTooltipContentClick}
           >

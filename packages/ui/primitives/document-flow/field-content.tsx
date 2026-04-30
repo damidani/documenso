@@ -1,5 +1,6 @@
 import { useLingui } from '@lingui/react';
-import type { DocumentMeta, Signature, TemplateMeta } from '@prisma/client';
+import { Trans } from '@lingui/react/macro';
+import type { DocumentMeta, Signature } from '@prisma/client';
 import { FieldType } from '@prisma/client';
 import { ChevronDown } from 'lucide-react';
 
@@ -27,7 +28,7 @@ type FieldIconProps = {
     fieldMeta?: TFieldMetaSchema | null;
     signature?: Signature | null;
   };
-  documentMeta?: DocumentMeta | TemplateMeta;
+  documentMeta?: Pick<DocumentMeta, 'dateFormat'>;
 };
 
 /**
@@ -38,13 +39,8 @@ export const FieldContent = ({ field, documentMeta }: FieldIconProps) => {
 
   const { type, fieldMeta } = field;
 
-  // Only render checkbox if values exist, otherwise render the empty checkbox field content.
-  if (
-    field.type === FieldType.CHECKBOX &&
-    field.fieldMeta?.type === 'checkbox' &&
-    field.fieldMeta.values &&
-    field.fieldMeta.values.length > 0
-  ) {
+  // Render checkbox layout for checkbox fields, even if no values exist yet
+  if (field.type === FieldType.CHECKBOX && field.fieldMeta?.type === 'checkbox') {
     let checkedValues: string[] = [];
 
     try {
@@ -55,8 +51,32 @@ export const FieldContent = ({ field, documentMeta }: FieldIconProps) => {
       console.error(err);
     }
 
+    // If no values exist yet, show a placeholder checkbox
+    if (!field.fieldMeta.values || field.fieldMeta.values.length === 0) {
+      return (
+        <div
+          className={cn(
+            'flex gap-1 py-0.5',
+            field.fieldMeta.direction === 'horizontal' ? 'flex-row flex-wrap' : 'flex-col gap-y-1',
+          )}
+        >
+          <div className="flex items-center">
+            <Checkbox className="h-3 w-3" disabled />
+            <Label className="ml-1.5 text-xs font-normal text-foreground opacity-50">
+              <Trans>Checkbox option</Trans>
+            </Label>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="flex flex-col gap-y-1 py-0.5">
+      <div
+        className={cn(
+          'flex gap-1 py-0.5',
+          field.fieldMeta.direction === 'horizontal' ? 'flex-row flex-wrap' : 'flex-col gap-y-1',
+        )}
+      >
         {field.fieldMeta.values.map((item, index) => (
           <div key={index} className="flex items-center">
             <Checkbox
@@ -70,7 +90,7 @@ export const FieldContent = ({ field, documentMeta }: FieldIconProps) => {
             {item.value && (
               <Label
                 htmlFor={`checkbox-${index}`}
-                className="text-foreground ml-1.5 text-xs font-normal"
+                className="ml-1.5 text-xs font-normal text-foreground"
               >
                 {item.value}
               </Label>
@@ -102,7 +122,7 @@ export const FieldContent = ({ field, documentMeta }: FieldIconProps) => {
               {item.value && (
                 <Label
                   htmlFor={`option-${index}`}
-                  className="text-foreground ml-1.5 text-xs font-normal"
+                  className="ml-1.5 text-xs font-normal text-foreground"
                 >
                   {item.value}
                 </Label>
@@ -120,8 +140,10 @@ export const FieldContent = ({ field, documentMeta }: FieldIconProps) => {
     !field.inserted
   ) {
     return (
-      <div className="text-field-card-foreground flex flex-row items-center py-0.5 text-[clamp(0.07rem,25cqw,0.825rem)] text-sm">
-        <p>Select</p>
+      <div className="flex flex-row items-center py-0.5 text-[clamp(0.07rem,25cqw,0.825rem)] text-sm text-field-card-foreground">
+        <p>
+          <Trans>Select</Trans>
+        </p>
         <ChevronDown className="h-4 w-4" />
       </div>
     );
@@ -141,14 +163,14 @@ export const FieldContent = ({ field, documentMeta }: FieldIconProps) => {
     );
   }
 
-  let textToDisplay = fieldMeta?.label || _(FRIENDLY_FIELD_TYPE[type]) || '';
+  const labelToDisplay = fieldMeta?.label || _(FRIENDLY_FIELD_TYPE[type]) || '';
+  let textToDisplay: string | undefined;
 
   const isSignatureField =
     field.type === FieldType.SIGNATURE || field.type === FieldType.FREE_SIGNATURE;
 
-  // Trim default labels.
-  if (textToDisplay.length > 20) {
-    textToDisplay = textToDisplay.substring(0, 20) + '...';
+  if (field.type === FieldType.TEXT && field.fieldMeta?.type === 'text' && field.fieldMeta?.text) {
+    textToDisplay = field.fieldMeta.text;
   }
 
   if (field.inserted) {
@@ -171,18 +193,19 @@ export const FieldContent = ({ field, documentMeta }: FieldIconProps) => {
   const textAlign = fieldMeta && 'textAlign' in fieldMeta ? fieldMeta.textAlign : 'left';
 
   return (
-    <div
-      className={cn(
-        'text-field-card-foreground flex h-full w-full items-center justify-center gap-x-1.5 overflow-clip whitespace-nowrap text-center text-[clamp(0.07rem,25cqw,0.825rem)]',
-        {
-          // Using justify instead of align because we also vertically center the text.
-          'justify-start': field.inserted && !isSignatureField && textAlign === 'left',
-          'justify-end': field.inserted && !isSignatureField && textAlign === 'right',
-          'font-signature text-[clamp(0.07rem,25cqw,1.125rem)]': isSignatureField,
-        },
-      )}
-    >
-      {textToDisplay}
+    <div className="flex h-full w-full items-center overflow-hidden">
+      <p
+        className={cn(
+          'w-full whitespace-pre-wrap text-left text-[clamp(0.07rem,25cqw,0.825rem)] text-foreground duration-200',
+          {
+            '!text-center': textAlign === 'center' || !textToDisplay,
+            '!text-right': textAlign === 'right',
+            'font-signature text-[clamp(0.07rem,25cqw,1.125rem)]': isSignatureField,
+          },
+        )}
+      >
+        {textToDisplay || labelToDisplay}
+      </p>
     </div>
   );
 };

@@ -49,8 +49,6 @@ Join us in creating the next generation of open trust infrastructure.
 
 ## Community and Next Steps 🎯
 
-We're currently working on a redesign of the application, including a revamp of the codebase, so Documenso can be more intuitive to use and robust to develop upon.
-
 - Check out the first source code release in this repository and test it.
 - Tell us what you think in the [Discussions](https://github.com/documenso/documenso/discussions).
 - Join the [Discord server](https://documen.so/discord) for any questions and getting to know to other community members.
@@ -173,15 +171,20 @@ git clone https://github.com/<your-username>/documenso
 
 5. Create the database schema by running `npm run prisma:migrate-dev`
 
-6. Run `npm run dev` in the root directory to start
+6. Run `npm run translate:compile` in the root directory to compile lingui
 
-7. Register a new user at http://localhost:3000/signup
+7. Run `npm run dev` in the root directory to start
+
+8. Register a new user at http://localhost:3000/signup
 
 ---
 
 - Optional: Seed the database using `npm run prisma:seed -w @documenso/prisma` to create a test user and document.
 - Optional: Create your own signing certificate.
   - To generate your own using these steps and a Linux Terminal or Windows Subsystem for Linux (WSL), see **[Create your own signing certificate](./SIGNING.md)**.
+- Optional: Configure job provider for document reminders.
+  - The default local job provider does not support scheduled jobs required for document reminders.
+  - To enable reminders, set `NEXT_PRIVATE_JOBS_PROVIDER=inngest` and provide `NEXT_PRIVATE_INNGEST_EVENT_KEY` in your `.env` file.
 
 ### Run in Gitpod
 
@@ -215,8 +218,6 @@ For detailed instructions on how to configure and run the Docker container, plea
 ## Self Hosting
 
 We support a variety of deployment methods, and are actively working on adding more. Stay tuned for updates!
-
-> Please note that the below deployment methods are for v0.9, we will update these to v1.0 once it has been released.
 
 ### Fetch, configure, and build
 
@@ -260,7 +261,7 @@ npm run start
 
 This will start the server on `localhost:3000`. For now, any reverse proxy can then do the frontend and SSL termination.
 
-> If you want to run with another port than 3000, you can start the application with `next -p <ANY PORT>` from the `apps/web` folder.
+> If you want to run with another port than 3000, you can start the application with `next -p <ANY PORT>` from the `apps/remix` folder.
 
 ### Run as a service
 
@@ -310,7 +311,7 @@ The Web UI can be found at http://localhost:9000, while the SMTP port will be on
 
 ### Support IPv6
 
-If you are deploying to a cluster that uses only IPv6, You can use a custom command to pass a parameter to the Next.js start command
+If you are deploying to a cluster that uses only IPv6, You can use a custom command to pass a parameter to the Remix start command
 
 For local docker run
 

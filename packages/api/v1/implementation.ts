@@ -1,5 +1,4 @@
-import type { Prisma } from '@prisma/client';
-import { DocumentDataType, SigningStatus, TeamMemberRole } from '@prisma/client';
+import { DocumentDataType, EnvelopeType, SigningStatus } from '@prisma/client';
 import { tsr } from '@ts-rest/serverless/fetch';
 import { match } from 'ts-pattern';
 
@@ -10,31 +9,28 @@ import '@documenso/lib/constants/time-zones';
 import { DEFAULT_DOCUMENT_TIME_ZONE, TIME_ZONES } from '@documenso/lib/constants/time-zones';
 import { AppError } from '@documenso/lib/errors/app-error';
 import { createDocumentData } from '@documenso/lib/server-only/document-data/create-document-data';
-import { upsertDocumentMeta } from '@documenso/lib/server-only/document-meta/upsert-document-meta';
-import { createDocument } from '@documenso/lib/server-only/document/create-document';
+import { updateDocumentMeta } from '@documenso/lib/server-only/document-meta/upsert-document-meta';
 import { deleteDocument } from '@documenso/lib/server-only/document/delete-document';
 import { findDocuments } from '@documenso/lib/server-only/document/find-documents';
-import { getDocumentById } from '@documenso/lib/server-only/document/get-document-by-id';
 import { resendDocument } from '@documenso/lib/server-only/document/resend-document';
 import { sendDocument } from '@documenso/lib/server-only/document/send-document';
-import { updateDocument as updateDocumentSettings } from '@documenso/lib/server-only/document/update-document';
-import { deleteField } from '@documenso/lib/server-only/field/delete-field';
-import { getFieldById } from '@documenso/lib/server-only/field/get-field-by-id';
-import { getFieldsForDocument } from '@documenso/lib/server-only/field/get-fields-for-document';
-import { updateField } from '@documenso/lib/server-only/field/update-field';
+import { createEnvelope } from '@documenso/lib/server-only/envelope/create-envelope';
+import {
+  getEnvelopeById,
+  getEnvelopeWhereInput,
+} from '@documenso/lib/server-only/envelope/get-envelope-by-id';
+import { deleteDocumentField } from '@documenso/lib/server-only/field/delete-document-field';
+import { updateEnvelopeFields } from '@documenso/lib/server-only/field/update-envelope-fields';
 import { insertFormValuesInPdf } from '@documenso/lib/server-only/pdf/insert-form-values-in-pdf';
-import { deleteRecipient } from '@documenso/lib/server-only/recipient/delete-recipient';
-import { getRecipientByIdV1Api } from '@documenso/lib/server-only/recipient/get-recipient-by-id-v1-api';
+import { deleteEnvelopeRecipient } from '@documenso/lib/server-only/recipient/delete-envelope-recipient';
 import { getRecipientsForDocument } from '@documenso/lib/server-only/recipient/get-recipients-for-document';
 import { setDocumentRecipients } from '@documenso/lib/server-only/recipient/set-document-recipients';
-import { updateRecipient } from '@documenso/lib/server-only/recipient/update-recipient';
-import { createTeamMemberInvites } from '@documenso/lib/server-only/team/create-team-member-invites';
-import { deleteTeamMembers } from '@documenso/lib/server-only/team/delete-team-members';
+import { updateEnvelopeRecipients } from '@documenso/lib/server-only/recipient/update-envelope-recipients';
 import { createDocumentFromTemplate } from '@documenso/lib/server-only/template/create-document-from-template';
-import { createDocumentFromTemplateLegacy } from '@documenso/lib/server-only/template/create-document-from-template-legacy';
 import { deleteTemplate } from '@documenso/lib/server-only/template/delete-template';
 import { findTemplates } from '@documenso/lib/server-only/template/find-templates';
 import { getTemplateById } from '@documenso/lib/server-only/template/get-template-by-id';
+import { ZRecipientAuthOptionsSchema } from '@documenso/lib/types/document-auth';
 import { extractDerivedDocumentEmailSettings } from '@documenso/lib/types/document-email';
 import {
   ZCheckboxFieldMeta,
@@ -45,13 +41,17 @@ import {
   ZTextFieldMeta,
 } from '@documenso/lib/types/field-meta';
 import { getFileServerSide } from '@documenso/lib/universal/upload/get-file.server';
-import { putPdfFileServerSide } from '@documenso/lib/universal/upload/put-file.server';
+import { putNormalizedPdfFileServerSide } from '@documenso/lib/universal/upload/put-file.server';
 import {
   getPresignGetUrl,
   getPresignPostUrl,
 } from '@documenso/lib/universal/upload/server-actions';
 import { isDocumentCompleted } from '@documenso/lib/utils/document';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
+import {
+  mapSecondaryIdToDocumentId,
+  mapSecondaryIdToTemplateId,
+} from '@documenso/lib/utils/envelope';
 import { prisma } from '@documenso/prisma';
 
 import { ApiContractV1 } from './contract';
@@ -66,39 +66,77 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       page,
       perPage,
       userId: user.id,
-      teamId: team?.id,
+      teamId: team.id,
+      folderId: args.query.folderId,
     });
 
     return {
       status: 200,
       body: {
-        documents,
+        documents: documents.map((document) => ({
+          id: mapSecondaryIdToDocumentId(document.secondaryId),
+          externalId: document.externalId,
+          userId: document.userId,
+          teamId: document.teamId,
+          folderId: document.folderId,
+          title: document.title,
+          status: document.status,
+          createdAt: document.createdAt,
+          updatedAt: document.updatedAt,
+          completedAt: document.completedAt,
+        })),
         totalPages,
       },
     };
   }),
 
-  getDocument: authenticatedMiddleware(async (args, user, team) => {
+  getDocument: authenticatedMiddleware(async (args, user, team, { logger }) => {
     const { id: documentId } = args.params;
 
+    logger.info({
+      input: {
+        id: documentId,
+      },
+    });
+
     try {
-      const document = await getDocumentById({
-        documentId: Number(documentId),
+      const { envelopeWhereInput } = await getEnvelopeWhereInput({
+        id: {
+          type: 'documentId',
+          id: Number(documentId),
+        },
+        type: EnvelopeType.DOCUMENT,
         userId: user.id,
-        teamId: team?.id,
+        teamId: team.id,
       });
 
-      const recipients = await getRecipientsForDocument({
-        documentId: Number(documentId),
-        userId: user.id,
-        teamId: team?.id,
+      const envelope = await prisma.envelope.findFirstOrThrow({
+        where: envelopeWhereInput,
+        include: {
+          recipients: {
+            orderBy: {
+              id: 'asc',
+            },
+          },
+          fields: {
+            include: {
+              signature: true,
+              recipient: {
+                select: {
+                  name: true,
+                  email: true,
+                  signingStatus: true,
+                },
+              },
+            },
+            orderBy: {
+              id: 'asc',
+            },
+          },
+        },
       });
 
-      const fields = await getFieldsForDocument({
-        documentId: Number(documentId),
-        userId: user.id,
-        teamId: team?.id,
-      });
+      const { fields, recipients } = envelope;
 
       const parsedMetaFields = fields.map((field) => {
         let parsedMetaOrNull = null;
@@ -119,12 +157,33 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         };
       });
 
+      const legacyDocumentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
+
       return {
         status: 200,
         body: {
-          ...document,
+          id: legacyDocumentId,
+          externalId: envelope.externalId,
+          userId: envelope.userId,
+          teamId: envelope.teamId,
+          folderId: envelope.folderId,
+          title: envelope.title,
+          status: envelope.status,
+          createdAt: envelope.createdAt,
+          updatedAt: envelope.updatedAt,
+          completedAt: envelope.completedAt,
           recipients: recipients.map((recipient) => ({
-            ...recipient,
+            id: recipient.id,
+            documentId: legacyDocumentId,
+            email: recipient.email,
+            name: recipient.name,
+            role: recipient.role,
+            signingOrder: recipient.signingOrder,
+            token: recipient.token,
+            signedAt: recipient.signedAt,
+            readStatus: recipient.readStatus,
+            signingStatus: recipient.signingStatus,
+            sendStatus: recipient.sendStatus,
             signingUrl: `${NEXT_PUBLIC_WEBAPP_URL()}/sign/${recipient.token}`,
           })),
           fields: parsedMetaFields,
@@ -140,27 +199,30 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     }
   }),
 
-  downloadSignedDocument: authenticatedMiddleware(async (args, user, team) => {
+  downloadSignedDocument: authenticatedMiddleware(async (args, user, team, { logger }) => {
     const { id: documentId } = args.params;
     const { downloadOriginalDocument } = args.query;
 
+    logger.info({
+      input: {
+        id: documentId,
+      },
+    });
+
     try {
-      if (process.env.NEXT_PUBLIC_UPLOAD_TRANSPORT !== 's3') {
-        return {
-          status: 500,
-          body: {
-            message: 'Please make sure the storage transport is set to S3.',
-          },
-        };
-      }
-
-      const document = await getDocumentById({
-        documentId: Number(documentId),
+      const envelope = await getEnvelopeById({
+        id: {
+          type: 'documentId',
+          id: Number(documentId),
+        },
+        type: EnvelopeType.DOCUMENT,
         userId: user.id,
-        teamId: team?.id,
-      });
+        teamId: team.id,
+      }).catch(() => null);
 
-      if (!document || !document.documentDataId) {
+      const firstDocumentData = envelope?.envelopeItems[0]?.documentData;
+
+      if (!envelope || !firstDocumentData) {
         return {
           status: 404,
           body: {
@@ -169,7 +231,17 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         };
       }
 
-      if (DocumentDataType.S3_PATH !== document.documentData.type) {
+      // This error is done AFTER the get envelope so we can test access controls without S3.
+      if (process.env.NEXT_PUBLIC_UPLOAD_TRANSPORT !== 's3') {
+        return {
+          status: 500,
+          body: {
+            message: 'Document downloads are only available when S3 storage is configured.',
+          },
+        };
+      }
+
+      if (DocumentDataType.S3_PATH !== firstDocumentData.type) {
         return {
           status: 400,
           body: {
@@ -178,7 +250,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         };
       }
 
-      if (!downloadOriginalDocument && !isDocumentCompleted(document.status)) {
+      if (!downloadOriginalDocument && !isDocumentCompleted(envelope.status)) {
         return {
           status: 400,
           body: {
@@ -187,8 +259,17 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         };
       }
 
+      if (envelope.envelopeItems.length !== 1) {
+        return {
+          status: 400,
+          body: {
+            message: 'API V1 does not support items',
+          },
+        };
+      }
+
       const { url } = await getPresignGetUrl(
-        downloadOriginalDocument ? document.documentData.initialData : document.documentData.data,
+        downloadOriginalDocument ? firstDocumentData.initialData : firstDocumentData.data,
       );
 
       return {
@@ -205,17 +286,29 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     }
   }),
 
-  deleteDocument: authenticatedMiddleware(async (args, user, team, { metadata }) => {
+  deleteDocument: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
     const { id: documentId } = args.params;
 
+    logger.info({
+      input: {
+        id: documentId,
+      },
+    });
+
     try {
-      const document = await getDocumentById({
-        documentId: Number(documentId),
+      const legacyDocumentId = Number(documentId);
+
+      const envelope = await getEnvelopeById({
+        id: {
+          type: 'documentId',
+          id: legacyDocumentId,
+        },
+        type: EnvelopeType.DOCUMENT,
         userId: user.id,
-        teamId: team?.id,
+        teamId: team.id,
       });
 
-      if (!document) {
+      if (!envelope) {
         return {
           status: 404,
           body: {
@@ -225,15 +318,28 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       }
 
       const deletedDocument = await deleteDocument({
-        id: document.id,
+        id: {
+          type: 'documentId',
+          id: legacyDocumentId,
+        },
         userId: user.id,
-        teamId: team?.id,
+        teamId: team.id,
         requestMetadata: metadata,
       });
 
       return {
         status: 200,
-        body: deletedDocument,
+        body: {
+          id: legacyDocumentId,
+          externalId: deletedDocument.externalId,
+          userId: deletedDocument.userId,
+          teamId: deletedDocument.teamId,
+          title: deletedDocument.title,
+          status: deletedDocument.status,
+          createdAt: deletedDocument.createdAt,
+          updatedAt: deletedDocument.updatedAt,
+          completedAt: deletedDocument.completedAt,
+        },
       };
     } catch (err) {
       return {
@@ -258,7 +364,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         };
       }
 
-      const { remaining } = await getServerLimits({ email: user.email, teamId: team?.id });
+      const { remaining } = await getServerLimits({ userId: user.id, teamId: team.id });
 
       if (remaining.documents <= 0) {
         return {
@@ -306,52 +412,52 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         type: DocumentDataType.S3_PATH,
       });
 
-      const document = await createDocument({
-        title: body.title,
-        externalId: body.externalId || null,
+      const envelope = await createEnvelope({
         userId: user.id,
-        teamId: team?.id,
-        formValues: body.formValues,
-        documentDataId: documentData.id,
+        teamId: team.id,
+        internalVersion: 1,
+        data: {
+          title: body.title,
+          type: EnvelopeType.DOCUMENT,
+          externalId: body.externalId || undefined,
+          formValues: body.formValues,
+          folderId: body.folderId,
+          envelopeItems: [
+            {
+              documentDataId: documentData.id,
+            },
+          ],
+          globalAccessAuth: body.authOptions?.globalAccessAuth,
+          globalActionAuth: body.authOptions?.globalActionAuth,
+        },
+        attachments: body.attachments,
+        meta: {
+          subject: body.meta.subject,
+          message: body.meta.message,
+          timezone,
+          dateFormat: dateFormat?.value,
+          redirectUrl: body.meta.redirectUrl,
+          signingOrder: body.meta.signingOrder,
+          allowDictateNextSigner: body.meta.allowDictateNextSigner,
+          language: body.meta.language,
+          typedSignatureEnabled: body.meta.typedSignatureEnabled,
+          uploadSignatureEnabled: body.meta.uploadSignatureEnabled,
+          drawSignatureEnabled: body.meta.drawSignatureEnabled,
+          distributionMethod: body.meta.distributionMethod,
+          emailSettings: body.meta.emailSettings,
+        },
         requestMetadata: metadata,
       });
 
-      await upsertDocumentMeta({
-        documentId: document.id,
-        userId: user.id,
-        teamId: team?.id,
-        subject: body.meta.subject,
-        message: body.meta.message,
-        timezone,
-        dateFormat: dateFormat?.value,
-        redirectUrl: body.meta.redirectUrl,
-        signingOrder: body.meta.signingOrder,
-        allowDictateNextSigner: body.meta.allowDictateNextSigner,
-        language: body.meta.language,
-        typedSignatureEnabled: body.meta.typedSignatureEnabled,
-        uploadSignatureEnabled: body.meta.uploadSignatureEnabled,
-        drawSignatureEnabled: body.meta.drawSignatureEnabled,
-        distributionMethod: body.meta.distributionMethod,
-        emailSettings: body.meta.emailSettings,
-        requestMetadata: metadata,
-      });
-
-      if (body.authOptions) {
-        await updateDocumentSettings({
-          documentId: document.id,
-          userId: user.id,
-          teamId: team?.id,
-          data: {
-            ...body.authOptions,
-          },
-          requestMetadata: metadata,
-        });
-      }
+      const legacyDocumentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
 
       const { recipients } = await setDocumentRecipients({
         userId: user.id,
-        teamId: team?.id,
-        documentId: document.id,
+        teamId: team.id,
+        id: {
+          type: 'documentId',
+          id: legacyDocumentId,
+        },
         recipients: body.recipients,
         requestMetadata: metadata,
       });
@@ -360,7 +466,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         status: 200,
         body: {
           uploadUrl: url,
-          documentId: document.id,
+          documentId: legacyDocumentId,
           recipients: recipients.map((recipient) => ({
             recipientId: recipient.id,
             name: recipient.name,
@@ -368,7 +474,6 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
             token: recipient.token,
             role: recipient.role,
             signingOrder: recipient.signingOrder,
-
             signingUrl: `${NEXT_PUBLIC_WEBAPP_URL()}/sign/${recipient.token}`,
           })),
         },
@@ -383,19 +488,154 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     }
   }),
 
-  deleteTemplate: authenticatedMiddleware(async (args, user, team) => {
-    const { id: templateId } = args.params;
+  createTemplate: authenticatedMiddleware(async (args, user, team, { metadata }) => {
+    const { body } = args;
+    const {
+      title,
+      folderId,
+      externalId,
+      visibility,
+      globalAccessAuth,
+      globalActionAuth,
+      publicTitle,
+      publicDescription,
+      type,
+      meta,
+      attachments,
+    } = body;
 
     try {
-      const deletedTemplate = await deleteTemplate({
-        id: Number(templateId),
+      if (process.env.NEXT_PUBLIC_UPLOAD_TRANSPORT !== 's3') {
+        return {
+          status: 500,
+          body: {
+            message: 'Create template is not available without S3 transport.',
+          },
+        };
+      }
+
+      const dateFormat = meta?.dateFormat
+        ? DATE_FORMATS.find((format) => format.value === meta?.dateFormat)
+        : DATE_FORMATS.find((format) => format.value === DEFAULT_DOCUMENT_DATE_FORMAT);
+
+      if (meta?.dateFormat && !dateFormat) {
+        return {
+          status: 400,
+          body: {
+            message: 'Invalid date format. Please provide a valid date format',
+          },
+        };
+      }
+
+      const timezone = meta?.timezone
+        ? TIME_ZONES.find((tz) => tz === meta?.timezone)
+        : DEFAULT_DOCUMENT_TIME_ZONE;
+
+      const isTimeZoneValid = meta?.timezone ? TIME_ZONES.includes(String(timezone)) : true;
+
+      if (!isTimeZoneValid) {
+        return {
+          status: 400,
+          body: {
+            message: 'Invalid timezone. Please provide a valid timezone',
+          },
+        };
+      }
+
+      const fileName = title?.endsWith('.pdf') ? title : `${title}.pdf`;
+
+      const { url, key } = await getPresignPostUrl(fileName, 'application/pdf');
+
+      const templateDocumentData = await createDocumentData({
+        data: key,
+        type: DocumentDataType.S3_PATH,
+      });
+
+      const createdTemplate = await createEnvelope({
         userId: user.id,
-        teamId: team?.id,
+        teamId: team.id,
+        internalVersion: 1,
+        data: {
+          type: EnvelopeType.TEMPLATE,
+          envelopeItems: [
+            {
+              documentDataId: templateDocumentData.id,
+            },
+          ],
+          templateType: type,
+          title,
+          folderId,
+          externalId: externalId ?? undefined,
+          visibility,
+          globalAccessAuth,
+          globalActionAuth,
+          publicTitle,
+          publicDescription,
+        },
+        meta,
+        attachments,
+        requestMetadata: metadata,
+      });
+
+      const fullTemplate = await getTemplateById({
+        id: {
+          type: 'envelopeId',
+          id: createdTemplate.id,
+        },
+        userId: user.id,
+        teamId: team.id,
       });
 
       return {
         status: 200,
-        body: deletedTemplate,
+        body: {
+          uploadUrl: url,
+          template: fullTemplate,
+        },
+      };
+    } catch (err) {
+      return {
+        status: 404,
+        body: {
+          message: 'An error has occured while creating the template',
+        },
+      };
+    }
+  }),
+
+  deleteTemplate: authenticatedMiddleware(async (args, user, team, { logger }) => {
+    const { id: templateId } = args.params;
+
+    logger.info({
+      input: {
+        id: templateId,
+      },
+    });
+
+    try {
+      const deletedTemplate = await deleteTemplate({
+        id: {
+          type: 'templateId',
+          id: Number(templateId),
+        },
+        userId: user.id,
+        teamId: team.id,
+      });
+
+      const legacyTemplateId = mapSecondaryIdToTemplateId(deletedTemplate.secondaryId);
+
+      return {
+        status: 200,
+        body: {
+          id: legacyTemplateId,
+          externalId: deletedTemplate.externalId,
+          type: deletedTemplate.templateType,
+          title: deletedTemplate.title,
+          userId: deletedTemplate.userId,
+          teamId: deletedTemplate.teamId,
+          createdAt: deletedTemplate.createdAt,
+          updatedAt: deletedTemplate.updatedAt,
+        },
       };
     } catch (err) {
       return {
@@ -407,20 +647,35 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     }
   }),
 
-  getTemplate: authenticatedMiddleware(async (args, user, team) => {
+  getTemplate: authenticatedMiddleware(async (args, user, team, { logger }) => {
     const { id: templateId } = args.params;
+
+    logger.info({
+      input: {
+        id: templateId,
+      },
+    });
 
     try {
       const template = await getTemplateById({
-        id: Number(templateId),
+        id: {
+          type: 'templateId',
+          id: Number(templateId),
+        },
         userId: user.id,
-        teamId: team?.id,
+        teamId: team.id,
       });
 
       return {
         status: 200,
         body: {
           ...template,
+          templateMeta: template.templateMeta
+            ? {
+                ...template.templateMeta,
+                templateId: template.id,
+              }
+            : null,
           Field: template.fields.map((field) => ({
             ...field,
             fieldMeta: field.fieldMeta ? ZFieldMetaSchema.parse(field.fieldMeta) : null,
@@ -442,16 +697,25 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         page,
         perPage,
         userId: user.id,
-        teamId: team?.id,
+        teamId: team.id,
       });
 
       return {
         status: 200,
         body: {
           templates: templates.map((template) => ({
-            ...template,
+            id: mapSecondaryIdToTemplateId(template.secondaryId),
+            externalId: template.externalId,
+            type: template.templateType,
+            title: template.title,
+            userId: template.userId,
+            teamId: template.teamId,
+            createdAt: template.createdAt,
+            updatedAt: template.updatedAt,
+            directLink: template.directLink,
             Field: template.fields.map((field) => ({
               ...field,
+              templateId: mapSecondaryIdToTemplateId(template.secondaryId),
               fieldMeta: field.fieldMeta ? ZFieldMetaSchema.parse(field.fieldMeta) : null,
             })),
             Recipient: template.recipients,
@@ -464,210 +728,255 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     }
   }),
 
-  createDocumentFromTemplate: authenticatedMiddleware(async (args, user, team, { metadata }) => {
-    const { body, params } = args;
+  createDocumentFromTemplate: authenticatedMiddleware(
+    async (args, user, team, { logger, metadata }) => {
+      const { body, params } = args;
 
-    const { remaining } = await getServerLimits({ email: user.email, teamId: team?.id });
-
-    if (remaining.documents <= 0) {
-      return {
-        status: 400,
-        body: {
-          message: 'You have reached the maximum number of documents allowed for this month',
+      logger.info({
+        input: {
+          templateId: params.templateId,
         },
-      };
-    }
-
-    const templateId = Number(params.templateId);
-
-    const fileName = body.title.endsWith('.pdf') ? body.title : `${body.title}.pdf`;
-
-    const document = await createDocumentFromTemplateLegacy({
-      templateId,
-      userId: user.id,
-      teamId: team?.id,
-      recipients: body.recipients,
-    });
-
-    let documentDataId = document.documentDataId;
-
-    if (body.formValues) {
-      const pdf = await getFileServerSide(document.documentData);
-
-      const prefilled = await insertFormValuesInPdf({
-        pdf: Buffer.from(pdf),
-        formValues: body.formValues,
       });
 
-      const newDocumentData = await putPdfFileServerSide({
-        name: fileName,
-        type: 'application/pdf',
-        arrayBuffer: async () => Promise.resolve(prefilled),
-      });
+      const { remaining } = await getServerLimits({ userId: user.id, teamId: team.id });
 
-      documentDataId = newDocumentData.id;
-    }
-
-    await updateDocument({
-      documentId: document.id,
-      userId: user.id,
-      teamId: team?.id,
-      data: {
-        title: fileName,
-        externalId: body.externalId || null,
-        formValues: body.formValues,
-        documentData: {
-          connect: {
-            id: documentDataId,
+      if (remaining.documents <= 0) {
+        return {
+          status: 400,
+          body: {
+            message: 'You have reached the maximum number of documents allowed for this month',
           },
+        };
+      }
+
+      const templateId = Number(params.templateId);
+
+      const fileName = body.title.endsWith('.pdf') ? body.title : `${body.title}.pdf`;
+
+      const template = await getEnvelopeById({
+        id: {
+          type: 'templateId',
+          id: templateId,
         },
-      },
-    });
-
-    if (body.meta) {
-      await upsertDocumentMeta({
-        documentId: document.id,
+        type: EnvelopeType.TEMPLATE,
         userId: user.id,
-        teamId: team?.id,
-        ...body.meta,
-        requestMetadata: metadata,
+        teamId: team.id,
       });
-    }
 
-    if (body.authOptions) {
-      await updateDocumentSettings({
-        documentId: document.id,
-        userId: user.id,
-        teamId: team?.id,
-        data: body.authOptions,
-        requestMetadata: metadata,
-      });
-    }
+      if (template.envelopeItems.length !== 1) {
+        throw new Error('API V1 does not support templates with multiple documents');
+      }
 
-    return {
-      status: 200,
-      body: {
-        documentId: document.id,
-        recipients: document.recipients.map((recipient) => ({
-          recipientId: recipient.id,
+      // V1 API request schema uses indices for recipients
+      // So we remap the recipients to attach the IDs
+      const mappedRecipients = body.recipients.map((recipient, index) => {
+        const existingRecipient = template.recipients.at(index);
+
+        if (!existingRecipient) {
+          throw new Error('Recipient not found.');
+        }
+
+        return {
+          id: existingRecipient.id,
           name: recipient.name,
           email: recipient.email,
-          token: recipient.token,
-          role: recipient.role,
           signingOrder: recipient.signingOrder,
+          role: recipient.role, // You probably shouldn't be able to change the role.
+        };
+      });
 
-          signingUrl: `${NEXT_PUBLIC_WEBAPP_URL()}/sign/${recipient.token}`,
-        })),
-      },
-    };
-  }),
-
-  generateDocumentFromTemplate: authenticatedMiddleware(async (args, user, team, { metadata }) => {
-    const { body, params } = args;
-
-    const { remaining } = await getServerLimits({ email: user.email, teamId: team?.id });
-
-    if (remaining.documents <= 0) {
-      return {
-        status: 400,
-        body: {
-          message: 'You have reached the maximum number of documents allowed for this month',
+      const createdEnvelope = await createDocumentFromTemplate({
+        id: {
+          type: 'templateId',
+          id: templateId,
         },
-      };
-    }
-
-    const templateId = Number(params.templateId);
-
-    let document: Awaited<ReturnType<typeof createDocumentFromTemplate>> | null = null;
-
-    try {
-      document = await createDocumentFromTemplate({
-        templateId,
         externalId: body.externalId || null,
         userId: user.id,
-        teamId: team?.id,
-        recipients: body.recipients,
-        prefillFields: body.prefillFields,
+        teamId: team.id,
+        recipients: mappedRecipients,
         override: {
-          title: body.title,
           ...body.meta,
+          title: body.title,
         },
-        requestMetadata: metadata,
-      });
-    } catch (err) {
-      return AppError.toRestAPIError(err);
-    }
-
-    if (body.formValues) {
-      const fileName = document.title.endsWith('.pdf') ? document.title : `${document.title}.pdf`;
-
-      const pdf = await getFileServerSide(document.documentData);
-
-      const prefilled = await insertFormValuesInPdf({
-        pdf: Buffer.from(pdf),
+        attachments: body.attachments,
         formValues: body.formValues,
-      });
-
-      const newDocumentData = await putPdfFileServerSide({
-        name: fileName,
-        type: 'application/pdf',
-        arrayBuffer: async () => Promise.resolve(prefilled),
-      });
-
-      await updateDocument({
-        documentId: document.id,
-        userId: user.id,
-        teamId: team?.id,
-        data: {
-          formValues: body.formValues,
-          documentData: {
-            connect: {
-              id: newDocumentData.id,
-            },
-          },
-        },
-      });
-    }
-
-    if (body.authOptions) {
-      await updateDocumentSettings({
-        documentId: document.id,
-        userId: user.id,
-        teamId: team?.id,
-        data: body.authOptions,
         requestMetadata: metadata,
       });
-    }
 
-    return {
-      status: 200,
-      body: {
-        documentId: document.id,
-        recipients: document.recipients.map((recipient) => ({
-          recipientId: recipient.id,
-          name: recipient.name,
-          email: recipient.email,
-          token: recipient.token,
-          role: recipient.role,
-          signingOrder: recipient.signingOrder,
-          signingUrl: `${NEXT_PUBLIC_WEBAPP_URL()}/sign/${recipient.token}`,
-        })),
-      },
-    };
-  }),
+      const envelopeItems = await prisma.envelopeItem.findMany({
+        where: {
+          envelopeId: createdEnvelope.id,
+        },
+        include: {
+          documentData: true,
+        },
+      });
 
-  sendDocument: authenticatedMiddleware(async (args, user, team, { metadata }) => {
+      const firstEnvelopeItemData = envelopeItems[0].documentData;
+
+      if (!firstEnvelopeItemData) {
+        throw new Error('Document data not found.');
+      }
+
+      if (body.formValues) {
+        const pdf = await getFileServerSide(firstEnvelopeItemData);
+
+        const prefilled = await insertFormValuesInPdf({
+          pdf: Buffer.from(pdf),
+          formValues: body.formValues,
+        });
+
+        const newDocumentData = await putNormalizedPdfFileServerSide({
+          name: fileName,
+          type: 'application/pdf',
+          arrayBuffer: async () => Promise.resolve(prefilled),
+        });
+
+        await prisma.envelopeItem.update({
+          where: {
+            id: firstEnvelopeItemData.id,
+          },
+          data: {
+            title: body.title || fileName,
+            documentDataId: newDocumentData.id,
+          },
+        });
+      }
+
+      if (body.authOptions || body.formValues) {
+        await prisma.envelope.update({
+          where: {
+            id: createdEnvelope.id,
+          },
+          data: {
+            formValues: body.formValues,
+            authOptions: body.authOptions,
+          },
+        });
+      }
+
+      return {
+        status: 200,
+        body: {
+          documentId: mapSecondaryIdToDocumentId(createdEnvelope.secondaryId),
+          recipients: createdEnvelope.recipients.map((recipient) => ({
+            recipientId: recipient.id,
+            name: recipient.name,
+            email: recipient.email,
+            token: recipient.token,
+            role: recipient.role,
+            signingOrder: recipient.signingOrder,
+
+            signingUrl: `${NEXT_PUBLIC_WEBAPP_URL()}/sign/${recipient.token}`,
+          })),
+        },
+      };
+    },
+  ),
+
+  generateDocumentFromTemplate: authenticatedMiddleware(
+    async (args, user, team, { logger, metadata }) => {
+      const { body, params } = args;
+
+      logger.info({
+        input: {
+          templateId: params.templateId,
+        },
+      });
+
+      const { remaining } = await getServerLimits({ userId: user.id, teamId: team.id });
+
+      if (remaining.documents <= 0) {
+        return {
+          status: 400,
+          body: {
+            message: 'You have reached the maximum number of documents allowed for this month',
+          },
+        };
+      }
+
+      const templateId = Number(params.templateId);
+
+      let envelope: Awaited<ReturnType<typeof createDocumentFromTemplate>> | null = null;
+
+      try {
+        envelope = await createDocumentFromTemplate({
+          id: {
+            type: 'templateId',
+            id: templateId,
+          },
+          externalId: body.externalId || null,
+          userId: user.id,
+          teamId: team.id,
+          recipients: body.recipients,
+          prefillFields: body.prefillFields,
+          folderId: body.folderId,
+          override: {
+            title: body.title,
+            ...body.meta,
+          },
+          formValues: body.formValues,
+          requestMetadata: metadata,
+        });
+      } catch (err) {
+        return AppError.toRestAPIError(err);
+      }
+
+      if (body.authOptions) {
+        await prisma.envelope.update({
+          where: {
+            id: envelope.id,
+          },
+          data: {
+            authOptions: body.authOptions,
+          },
+        });
+      }
+
+      const legacyDocumentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
+
+      return {
+        status: 200,
+        body: {
+          documentId: legacyDocumentId,
+          recipients: envelope.recipients.map((recipient) => ({
+            recipientId: recipient.id,
+            name: recipient.name,
+            email: recipient.email,
+            token: recipient.token,
+            role: recipient.role,
+            signingOrder: recipient.signingOrder,
+            signingUrl: `${NEXT_PUBLIC_WEBAPP_URL()}/sign/${recipient.token}`,
+          })),
+        },
+      };
+    },
+  ),
+
+  sendDocument: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
     const { id: documentId } = args.params;
     const { sendEmail, sendCompletionEmails } = args.body;
 
+    logger.info({
+      input: {
+        id: documentId,
+      },
+    });
+
     try {
-      const document = await getDocumentById({
-        documentId: Number(documentId),
+      const legacyDocumentId = Number(documentId);
+
+      const envelope = await getEnvelopeById({
+        id: {
+          type: 'documentId',
+          id: legacyDocumentId,
+        },
+        type: EnvelopeType.DOCUMENT,
         userId: user.id,
-        teamId: team?.id,
+        teamId: team.id,
       });
 
-      if (!document) {
+      if (!envelope) {
         return {
           status: 404,
           body: {
@@ -676,7 +985,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         };
       }
 
-      if (isDocumentCompleted(document.status)) {
+      if (isDocumentCompleted(envelope.status)) {
         return {
           status: 400,
           body: {
@@ -685,14 +994,17 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         };
       }
 
-      const emailSettings = extractDerivedDocumentEmailSettings(document.documentMeta);
+      const emailSettings = extractDerivedDocumentEmailSettings(envelope.documentMeta);
 
       // Update document email settings if sendCompletionEmails is provided
       if (typeof sendCompletionEmails === 'boolean') {
-        await upsertDocumentMeta({
-          documentId: document.id,
+        await updateDocumentMeta({
+          id: {
+            type: 'envelopeId',
+            id: envelope.id,
+          },
           userId: user.id,
-          teamId: team?.id,
+          teamId: team.id,
           emailSettings: {
             ...emailSettings,
             documentCompleted: sendCompletionEmails,
@@ -703,9 +1015,12 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       }
 
       const { recipients, ...sentDocument } = await sendDocument({
-        documentId: document.id,
+        id: {
+          type: 'envelopeId',
+          id: envelope.id,
+        },
         userId: user.id,
-        teamId: team?.id,
+        teamId: team.id,
         sendEmail,
         requestMetadata: metadata,
       });
@@ -714,7 +1029,15 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         status: 200,
         body: {
           message: 'Document sent for signing successfully',
-          ...sentDocument,
+          id: mapSecondaryIdToDocumentId(sentDocument.secondaryId),
+          externalId: sentDocument.externalId,
+          userId: sentDocument.userId,
+          teamId: sentDocument.teamId,
+          title: sentDocument.title,
+          status: sentDocument.status,
+          createdAt: sentDocument.createdAt,
+          updatedAt: sentDocument.updatedAt,
+          completedAt: sentDocument.completedAt,
           recipients: recipients.map((recipient) => ({
             ...recipient,
             signingUrl: `${NEXT_PUBLIC_WEBAPP_URL()}/sign/${recipient.token}`,
@@ -722,25 +1045,29 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         },
       };
     } catch (err) {
-      return {
-        status: 500,
-        body: {
-          message: 'An error has occured while sending the document for signing',
-        },
-      };
+      return AppError.toRestAPIError(err);
     }
   }),
 
-  resendDocument: authenticatedMiddleware(async (args, user, team, { metadata }) => {
+  resendDocument: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
     const { id: documentId } = args.params;
     const { recipients } = args.body;
+
+    logger.info({
+      input: {
+        id: documentId,
+      },
+    });
 
     try {
       await resendDocument({
         userId: user.id,
-        documentId: Number(documentId),
+        id: {
+          type: 'documentId',
+          id: Number(documentId),
+        },
         recipients,
-        teamId: team?.id,
+        teamId: team.id,
         requestMetadata: metadata,
       });
 
@@ -760,17 +1087,29 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     }
   }),
 
-  createRecipient: authenticatedMiddleware(async (args, user, team, { metadata }) => {
+  createRecipient: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
     const { id: documentId } = args.params;
     const { name, email, role, authOptions, signingOrder } = args.body;
 
-    const document = await getDocumentById({
-      documentId: Number(documentId),
-      userId: user.id,
-      teamId: team?.id,
+    logger.info({
+      input: {
+        id: documentId,
+      },
     });
 
-    if (!document) {
+    const legacyDocumentId = Number(documentId);
+
+    const envelope = await getEnvelopeById({
+      id: {
+        type: 'documentId',
+        id: legacyDocumentId,
+      },
+      type: EnvelopeType.DOCUMENT,
+      userId: user.id,
+      teamId: team.id,
+    });
+
+    if (!envelope) {
       return {
         status: 404,
         body: {
@@ -779,7 +1118,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       };
     }
 
-    if (isDocumentCompleted(document.status)) {
+    if (isDocumentCompleted(envelope.status)) {
       return {
         status: 400,
         body: {
@@ -791,7 +1130,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     const recipients = await getRecipientsForDocument({
       documentId: Number(documentId),
       userId: user.id,
-      teamId: team?.id,
+      teamId: team.id,
     });
 
     const recipientAlreadyExists = recipients.some((recipient) => recipient.email === email);
@@ -807,21 +1146,26 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
 
     try {
       const { recipients: newRecipients } = await setDocumentRecipients({
-        documentId: Number(documentId),
+        id: {
+          type: 'documentId',
+          id: Number(documentId),
+        },
         userId: user.id,
-        teamId: team?.id,
+        teamId: team.id,
         recipients: [
-          ...recipients.map(({ email, name }) => ({
-            email,
-            name,
-            role,
+          ...recipients.map((recipient) => ({
+            email: recipient.email,
+            name: recipient.name,
+            role: recipient.role,
+            signingOrder: recipient.signingOrder,
+            actionAuth: ZRecipientAuthOptionsSchema.parse(recipient.authOptions)?.actionAuth ?? [],
           })),
           {
             email,
             name,
             role,
             signingOrder,
-            actionAuth: authOptions?.actionAuth ?? null,
+            actionAuth: authOptions?.actionAuth ?? [],
           },
         ],
         requestMetadata: metadata,
@@ -851,17 +1195,30 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     }
   }),
 
-  updateRecipient: authenticatedMiddleware(async (args, user, team, { metadata }) => {
+  updateRecipient: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
     const { id: documentId, recipientId } = args.params;
     const { name, email, role, authOptions, signingOrder } = args.body;
 
-    const document = await getDocumentById({
-      documentId: Number(documentId),
-      userId: user.id,
-      teamId: team?.id,
+    logger.info({
+      input: {
+        id: documentId,
+        recipientId,
+      },
     });
 
-    if (!document) {
+    const legacyDocumentId = Number(documentId);
+
+    const envelope = await getEnvelopeById({
+      id: {
+        type: 'documentId',
+        id: legacyDocumentId,
+      },
+      type: EnvelopeType.DOCUMENT,
+      userId: user.id,
+      teamId: team.id,
+    });
+
+    if (!envelope) {
       return {
         status: 404,
         body: {
@@ -870,7 +1227,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       };
     }
 
-    if (isDocumentCompleted(document.status)) {
+    if (isDocumentCompleted(envelope.status)) {
       return {
         status: 400,
         body: {
@@ -879,18 +1236,27 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       };
     }
 
-    const updatedRecipient = await updateRecipient({
-      documentId: Number(documentId),
-      recipientId: Number(recipientId),
+    const updatedRecipient = await updateEnvelopeRecipients({
       userId: user.id,
-      teamId: team?.id,
-      email,
-      name,
-      role,
-      signingOrder,
-      actionAuth: authOptions?.actionAuth,
-      requestMetadata: metadata.requestMetadata,
-    }).catch(() => null);
+      teamId: team.id,
+      id: {
+        type: 'envelopeId',
+        id: envelope.id,
+      },
+      recipients: [
+        {
+          id: Number(recipientId),
+          email,
+          name,
+          role,
+          signingOrder,
+          actionAuth: authOptions?.actionAuth ?? [],
+        },
+      ],
+      requestMetadata: metadata,
+    })
+      .then(({ recipients }) => recipients[0])
+      .catch(null);
 
     if (!updatedRecipient) {
       return {
@@ -911,49 +1277,31 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     };
   }),
 
-  deleteRecipient: authenticatedMiddleware(async (args, user, team, { metadata }) => {
+  deleteRecipient: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
     const { id: documentId, recipientId } = args.params;
 
-    const document = await getDocumentById({
-      documentId: Number(documentId),
-      userId: user.id,
-      teamId: team?.id,
+    logger.info({
+      input: {
+        id: documentId,
+        recipientId,
+      },
     });
 
-    if (!document) {
-      return {
-        status: 404,
-        body: {
-          message: 'Document not found',
-        },
-      };
-    }
-
-    if (isDocumentCompleted(document.status)) {
-      return {
-        status: 400,
-        body: {
-          message: 'Document is already completed',
-        },
-      };
-    }
-
-    const deletedRecipient = await deleteRecipient({
-      documentId: Number(documentId),
-      recipientId: Number(recipientId),
+    const deletedRecipient = await deleteEnvelopeRecipient({
       userId: user.id,
-      teamId: team?.id,
-      requestMetadata: metadata.requestMetadata,
-    }).catch(() => null);
-
-    if (!deletedRecipient) {
-      return {
-        status: 400,
-        body: {
-          message: 'Unable to delete recipient',
+      teamId: team.id,
+      recipientId: Number(recipientId),
+      requestMetadata: {
+        requestMetadata: metadata.requestMetadata,
+        source: 'apiV1',
+        auth: 'api',
+        auditUser: {
+          id: team.id,
+          email: team.name,
+          name: team.name,
         },
-      };
-    }
+      },
+    });
 
     return {
       status: 200,
@@ -965,36 +1313,57 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     };
   }),
 
-  createField: authenticatedMiddleware(async (args, user, team, { metadata }) => {
+  createField: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
     const { id: documentId } = args.params;
-    const fields = Array.isArray(args.body) ? args.body : [args.body];
 
-    const document = await prisma.document.findFirst({
-      select: { id: true, status: true },
-      where: {
-        id: Number(documentId),
-        ...(team?.id
-          ? {
-              team: {
-                id: team.id,
-                members: { some: { userId: user.id } },
-              },
-            }
-          : {
-              userId: user.id,
-              teamId: null,
-            }),
+    logger.info({
+      input: {
+        id: documentId,
       },
     });
 
-    if (!document) {
+    const fields = Array.isArray(args.body) ? args.body : [args.body];
+
+    const { envelopeWhereInput } = await getEnvelopeWhereInput({
+      id: {
+        type: 'documentId',
+        id: Number(documentId),
+      },
+      type: EnvelopeType.DOCUMENT,
+      teamId: team.id,
+      userId: user.id,
+    });
+
+    const envelope = await prisma.envelope.findFirst({
+      where: envelopeWhereInput,
+      select: {
+        id: true,
+        secondaryId: true,
+        status: true,
+        envelopeItems: {
+          select: { id: true },
+        },
+      },
+    });
+
+    if (!envelope) {
       return {
         status: 404,
         body: { message: 'Document not found' },
       };
     }
 
-    if (isDocumentCompleted(document.status)) {
+    const firstEnvelopeItemId = envelope.envelopeItems[0].id;
+
+    if (!firstEnvelopeItemId) {
+      throw new Error('Missing envelope item ID');
+    }
+
+    if (envelope.envelopeItems.length !== 1) {
+      throw new Error('API V1 does not support multiple documents');
+    }
+
+    if (isDocumentCompleted(envelope.status)) {
       return {
         status: 400,
         body: { message: 'Document is already completed' },
@@ -1020,10 +1389,12 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
               throw new Error('Invalid page number');
             }
 
-            const recipient = await getRecipientByIdV1Api({
-              id: Number(recipientId),
-              documentId: Number(documentId),
-            }).catch(() => null);
+            const recipient = await tx.recipient.findFirst({
+              where: {
+                id: Number(recipientId),
+                envelopeId: envelope.id,
+              },
+            });
 
             if (!recipient) {
               throw new Error('Recipient not found');
@@ -1070,7 +1441,8 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
 
             const field = await tx.field.create({
               data: {
-                documentId: Number(documentId),
+                envelopeId: envelope.id,
+                envelopeItemId: firstEnvelopeItemId,
                 recipientId: Number(recipientId),
                 type,
                 page: pageNumber,
@@ -1090,9 +1462,9 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
             await tx.documentAuditLog.create({
               data: createDocumentAuditLogData({
                 type: 'FIELD_CREATED',
-                documentId: Number(documentId),
+                envelopeId: envelope.id,
                 user: {
-                  id: team?.id ?? user.id,
+                  id: team.id ?? user.id,
                   email: team?.name ?? user.email,
                   name: team ? '' : user.name,
                 },
@@ -1108,7 +1480,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
 
             return {
               id: field.id,
-              documentId: Number(field.documentId),
+              documentId: mapSecondaryIdToDocumentId(envelope.secondaryId),
               recipientId: field.recipientId ?? -1,
               type: field.type,
               pageNumber: field.page,
@@ -1136,18 +1508,29 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     }
   }),
 
-  updateField: authenticatedMiddleware(async (args, user, team, { metadata }) => {
+  updateField: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
     const { id: documentId, fieldId } = args.params;
     const { recipientId, type, pageNumber, pageWidth, pageHeight, pageX, pageY, fieldMeta } =
       args.body;
 
-    const document = await getDocumentById({
-      documentId: Number(documentId),
-      userId: user.id,
-      teamId: team?.id,
+    logger.info({
+      input: {
+        id: documentId,
+        fieldId,
+      },
     });
 
-    if (!document) {
+    const envelope = await getEnvelopeById({
+      id: {
+        type: 'documentId',
+        id: Number(documentId),
+      },
+      type: EnvelopeType.DOCUMENT,
+      userId: user.id,
+      teamId: team.id,
+    });
+
+    if (!envelope) {
       return {
         status: 404,
         body: {
@@ -1156,7 +1539,19 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       };
     }
 
-    if (isDocumentCompleted(document.status)) {
+    const legacyDocumentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
+
+    const firstEnvelopeItemId = envelope.envelopeItems[0].id;
+
+    if (!firstEnvelopeItemId) {
+      throw new Error('Missing document data');
+    }
+
+    if (envelope.envelopeItems.length > 1) {
+      throw new Error('API V1 does not support multiple documents');
+    }
+
+    if (isDocumentCompleted(envelope.status)) {
       return {
         status: 400,
         body: {
@@ -1165,10 +1560,12 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       };
     }
 
-    const recipient = await getRecipientByIdV1Api({
-      id: Number(recipientId),
-      documentId: Number(documentId),
-    }).catch(() => null);
+    const recipient = await prisma.recipient.findFirst({
+      where: {
+        id: Number(recipientId),
+        envelopeId: envelope.id,
+      },
+    });
 
     if (!recipient) {
       return {
@@ -1188,121 +1585,87 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       };
     }
 
-    const updatedField = await updateField({
-      fieldId: Number(fieldId),
+    const { fields } = await updateEnvelopeFields({
       userId: user.id,
-      teamId: team?.id,
-      documentId: Number(documentId),
-      recipientId: recipientId ? Number(recipientId) : undefined,
-      type,
-      pageNumber,
-      pageX,
-      pageY,
-      pageWidth,
-      pageHeight,
-      requestMetadata: metadata.requestMetadata,
-      fieldMeta: fieldMeta ? ZFieldMetaSchema.parse(fieldMeta) : undefined,
+      teamId: team.id,
+      id: {
+        type: 'documentId',
+        id: legacyDocumentId,
+      },
+      fields: [
+        {
+          id: Number(fieldId),
+          type,
+          pageNumber,
+          pageX,
+          pageY,
+          width: pageWidth,
+          height: pageHeight,
+          fieldMeta: fieldMeta ? ZFieldMetaSchema.parse(fieldMeta) : undefined,
+        },
+      ],
+      requestMetadata: {
+        requestMetadata: metadata.requestMetadata,
+        source: 'apiV1',
+        auth: 'api',
+        auditUser: {
+          id: team.id,
+          email: team.name,
+          name: team.name,
+        },
+      },
     });
 
-    const remappedField = {
-      id: updatedField.id,
-      documentId: updatedField.documentId,
-      recipientId: updatedField.recipientId ?? -1,
-      type: updatedField.type,
-      pageNumber: updatedField.page,
-      pageX: Number(updatedField.positionX),
-      pageY: Number(updatedField.positionY),
-      pageWidth: Number(updatedField.width),
-      pageHeight: Number(updatedField.height),
-      customText: updatedField.customText,
-      inserted: updatedField.inserted,
-    };
+    const updatedField = fields[0];
 
     return {
       status: 200,
       body: {
-        ...remappedField,
-        documentId: Number(documentId),
+        id: updatedField.id,
+        documentId: legacyDocumentId,
+        recipientId: updatedField.recipientId ?? -1,
+        type: updatedField.type,
+        pageNumber: updatedField.page,
+        pageX: Number(updatedField.positionX),
+        pageY: Number(updatedField.positionY),
+        pageWidth: Number(updatedField.width),
+        pageHeight: Number(updatedField.height),
+        customText: updatedField.customText,
+        inserted: updatedField.inserted,
       },
     };
   }),
 
-  deleteField: authenticatedMiddleware(async (args, user, team, { metadata }) => {
-    const { id: documentId, fieldId } = args.params;
+  deleteField: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
+    // Note: documentId isn't actually used anywhere, so we just return it.
+    const { id: unverifiedDocumentId, fieldId } = args.params;
 
-    const document = await getDocumentById({
-      documentId: Number(documentId),
-      userId: user.id,
+    logger.info({
+      input: {
+        id: unverifiedDocumentId,
+        fieldId,
+      },
     });
 
-    if (!document) {
-      return {
-        status: 404,
-        body: {
-          message: 'Document not found',
-        },
-      };
-    }
-
-    if (isDocumentCompleted(document.status)) {
-      return {
-        status: 400,
-        body: {
-          message: 'Document is already completed',
-        },
-      };
-    }
-
-    const field = await getFieldById({
-      userId: user.id,
-      teamId: team?.id,
-      fieldId: Number(fieldId),
-      documentId: Number(documentId),
-    }).catch(() => null);
-
-    if (!field) {
-      return {
-        status: 404,
-        body: {
-          message: 'Field not found',
-        },
-      };
-    }
-
-    const recipient = await getRecipientByIdV1Api({
-      id: Number(field.recipientId),
-      documentId: Number(documentId),
-    }).catch(() => null);
-
-    if (recipient?.signingStatus === SigningStatus.SIGNED) {
-      return {
-        status: 400,
-        body: {
-          message: 'Recipient has already signed the document',
-        },
-      };
-    }
-
-    const deletedField = await deleteField({
-      documentId: Number(documentId),
+    const deletedField = await deleteDocumentField({
       fieldId: Number(fieldId),
       userId: user.id,
-      teamId: team?.id,
-      requestMetadata: metadata.requestMetadata,
-    }).catch(() => null);
-
-    if (!deletedField) {
-      return {
-        status: 400,
-        body: {
-          message: 'Unable to delete field',
+      teamId: team.id,
+      requestMetadata: {
+        requestMetadata: metadata.requestMetadata,
+        source: 'apiV1',
+        auth: 'api',
+        auditUser: {
+          id: team.id,
+          email: team.name,
+          name: team.name,
         },
-      };
-    }
+      },
+    });
 
     const remappedField = {
       id: deletedField.id,
-      documentId: deletedField.documentId,
+      documentId: Number(unverifiedDocumentId),
       recipientId: deletedField.recipientId ?? -1,
       type: deletedField.type,
       pageNumber: deletedField.page,
@@ -1316,312 +1679,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
 
     return {
       status: 200,
-      body: {
-        ...remappedField,
-        documentId: Number(documentId),
-      },
-    };
-  }),
-
-  findTeamMembers: authenticatedMiddleware(async (args, user, team) => {
-    const { id: teamId } = args.params;
-
-    if (team?.id !== Number(teamId)) {
-      return {
-        status: 403,
-        body: {
-          message: 'You are not authorized to perform actions against this team.',
-        },
-      };
-    }
-
-    const self = await prisma.teamMember.findFirst({
-      where: {
-        userId: user.id,
-        teamId: team.id,
-      },
-    });
-
-    if (self?.role !== TeamMemberRole.ADMIN) {
-      return {
-        status: 403,
-        body: {
-          message: 'You are not authorized to perform actions against this team.',
-        },
-      };
-    }
-
-    const members = await prisma.teamMember.findMany({
-      where: {
-        teamId: team.id,
-      },
-      include: {
-        user: true,
-      },
-    });
-
-    return {
-      status: 200,
-      body: {
-        members: members.map((member) => ({
-          id: member.id,
-          email: member.user.email,
-          role: member.role,
-        })),
-      },
-    };
-  }),
-
-  inviteTeamMember: authenticatedMiddleware(async (args, user, team) => {
-    const { id: teamId } = args.params;
-
-    const { email, role } = args.body;
-
-    if (team?.id !== Number(teamId)) {
-      return {
-        status: 403,
-        body: {
-          message: 'You are not authorized to perform actions against this team.',
-        },
-      };
-    }
-
-    const self = await prisma.teamMember.findFirst({
-      where: {
-        userId: user.id,
-        teamId: team.id,
-      },
-    });
-
-    if (self?.role !== TeamMemberRole.ADMIN) {
-      return {
-        status: 403,
-        body: {
-          message: 'You are not authorized to perform actions against this team.',
-        },
-      };
-    }
-
-    const hasAlreadyBeenInvited = await prisma.teamMember.findFirst({
-      where: {
-        teamId: team.id,
-        user: {
-          email,
-        },
-      },
-    });
-
-    if (hasAlreadyBeenInvited) {
-      return {
-        status: 400,
-        body: {
-          message: 'This user has already been invited to the team',
-        },
-      };
-    }
-
-    await createTeamMemberInvites({
-      userId: user.id,
-      userName: user.name ?? '',
-      teamId: team.id,
-      invitations: [
-        {
-          email,
-          role,
-        },
-      ],
-    });
-
-    return {
-      status: 200,
-      body: {
-        message: 'An invite has been sent to the member',
-      },
-    };
-  }),
-
-  updateTeamMember: authenticatedMiddleware(async (args, user, team) => {
-    const { id: teamId, memberId } = args.params;
-
-    const { role } = args.body;
-
-    if (team?.id !== Number(teamId)) {
-      return {
-        status: 403,
-        body: {
-          message: 'You are not authorized to perform actions against this team.',
-        },
-      };
-    }
-
-    const self = await prisma.teamMember.findFirst({
-      where: {
-        userId: user.id,
-        teamId: team.id,
-      },
-    });
-
-    if (self?.role !== TeamMemberRole.ADMIN) {
-      return {
-        status: 403,
-        body: {
-          message: 'You are not authorized to perform actions against this team.',
-        },
-      };
-    }
-
-    const member = await prisma.teamMember.findFirst({
-      where: {
-        id: Number(memberId),
-        teamId: team.id,
-      },
-    });
-
-    if (!member) {
-      return {
-        status: 404,
-        body: {
-          message: 'The provided member id does not exist.',
-        },
-      };
-    }
-
-    const updatedMember = await prisma.teamMember.update({
-      where: {
-        id: member.id,
-      },
-      data: {
-        role,
-      },
-      include: {
-        user: true,
-      },
-    });
-
-    return {
-      status: 200,
-      body: {
-        id: updatedMember.id,
-        email: updatedMember.user.email,
-        role: updatedMember.role,
-      },
-    };
-  }),
-
-  removeTeamMember: authenticatedMiddleware(async (args, user, team) => {
-    const { id: teamId, memberId } = args.params;
-
-    if (team?.id !== Number(teamId)) {
-      return {
-        status: 403,
-        body: {
-          message: 'You are not authorized to perform actions against this team.',
-        },
-      };
-    }
-
-    const self = await prisma.teamMember.findFirst({
-      where: {
-        userId: user.id,
-        teamId: team.id,
-      },
-    });
-
-    if (self?.role !== TeamMemberRole.ADMIN) {
-      return {
-        status: 403,
-        body: {
-          message: 'You are not authorized to perform actions against this team.',
-        },
-      };
-    }
-
-    const member = await prisma.teamMember.findFirst({
-      where: {
-        id: Number(memberId),
-        teamId: Number(teamId),
-      },
-      include: {
-        user: true,
-      },
-    });
-
-    if (!member) {
-      return {
-        status: 404,
-        body: {
-          message: 'Member not found',
-        },
-      };
-    }
-
-    if (team.ownerUserId === member.userId) {
-      return {
-        status: 403,
-        body: {
-          message: 'You cannot remove the owner of the team',
-        },
-      };
-    }
-
-    if (member.userId === user.id) {
-      return {
-        status: 403,
-        body: {
-          message: 'You cannot remove yourself from the team',
-        },
-      };
-    }
-
-    await deleteTeamMembers({
-      userId: user.id,
-      teamId: team.id,
-      teamMemberIds: [member.id],
-    });
-
-    return {
-      status: 200,
-      body: {
-        id: member.id,
-        email: member.user.email,
-        role: member.role,
-      },
+      body: remappedField,
     };
   }),
 });
-
-const updateDocument = async ({
-  documentId,
-  userId,
-  teamId,
-  data,
-}: {
-  documentId: number;
-  data: Prisma.DocumentUpdateInput;
-  userId: number;
-  teamId?: number;
-}) => {
-  return await prisma.document.update({
-    where: {
-      id: documentId,
-      ...(teamId
-        ? {
-            team: {
-              id: teamId,
-              members: {
-                some: {
-                  userId,
-                },
-              },
-            },
-          }
-        : {
-            userId,
-            teamId: null,
-          }),
-    },
-    data: {
-      ...data,
-    },
-  });
-};

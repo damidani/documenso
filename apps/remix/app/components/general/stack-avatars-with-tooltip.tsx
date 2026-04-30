@@ -2,10 +2,11 @@ import { useMemo } from 'react';
 
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { type DocumentStatus, type Recipient } from '@prisma/client';
+import type { DocumentStatus } from '@prisma/client';
 
 import { RecipientStatusType, getRecipientType } from '@documenso/lib/client-only/recipient-type';
 import { RECIPIENT_ROLES_DESCRIPTION } from '@documenso/lib/constants/recipient-roles';
+import type { TRecipientLite } from '@documenso/lib/types/recipient';
 import { recipientAbbreviation } from '@documenso/lib/utils/recipient-formatter';
 import { PopoverHover } from '@documenso/ui/primitives/popover';
 
@@ -15,7 +16,7 @@ import { StackAvatars } from './stack-avatars';
 
 export type StackAvatarsWithTooltipProps = {
   documentStatus: DocumentStatus;
-  recipients: Recipient[];
+  recipients: TRecipientLite[];
   position?: 'top' | 'bottom';
   children?: React.ReactNode;
 };
@@ -74,7 +75,7 @@ export const StackAvatarsWithTooltip = ({
           <h1 className="text-base font-medium">
             <Trans>Completed</Trans>
           </h1>
-          {completedRecipients.map((recipient: Recipient) => (
+          {completedRecipients.map((recipient) => (
             <div key={recipient.id} className="my-1 flex items-center gap-2">
               <StackAvatar
                 first={true}
@@ -83,8 +84,8 @@ export const StackAvatarsWithTooltip = ({
                 fallbackText={recipientAbbreviation(recipient)}
               />
               <div>
-                <p className="text-muted-foreground text-sm">{recipient.email}</p>
-                <p className="text-muted-foreground/70 text-xs">
+                <p className="text-sm text-muted-foreground">{recipient.email || recipient.name}</p>
+                <p className="text-xs text-muted-foreground/70">
                   {_(RECIPIENT_ROLES_DESCRIPTION[recipient.role].roleName)}
                 </p>
               </div>
@@ -98,7 +99,7 @@ export const StackAvatarsWithTooltip = ({
           <h1 className="text-base font-medium">
             <Trans>Rejected</Trans>
           </h1>
-          {rejectedRecipients.map((recipient: Recipient) => (
+          {rejectedRecipients.map((recipient) => (
             <div key={recipient.id} className="my-1 flex items-center gap-2">
               <StackAvatar
                 first={true}
@@ -107,8 +108,8 @@ export const StackAvatarsWithTooltip = ({
                 fallbackText={recipientAbbreviation(recipient)}
               />
               <div>
-                <p className="text-muted-foreground text-sm">{recipient.email}</p>
-                <p className="text-muted-foreground/70 text-xs">
+                <p className="text-sm text-muted-foreground">{recipient.email || recipient.name}</p>
+                <p className="text-xs text-muted-foreground/70">
                   {_(RECIPIENT_ROLES_DESCRIPTION[recipient.role].roleName)}
                 </p>
               </div>
@@ -122,7 +123,7 @@ export const StackAvatarsWithTooltip = ({
           <h1 className="text-base font-medium">
             <Trans>Waiting</Trans>
           </h1>
-          {waitingRecipients.map((recipient: Recipient) => (
+          {waitingRecipients.map((recipient) => (
             <AvatarWithRecipient
               key={recipient.id}
               recipient={recipient}
@@ -137,7 +138,7 @@ export const StackAvatarsWithTooltip = ({
           <h1 className="text-base font-medium">
             <Trans>Opened</Trans>
           </h1>
-          {openedRecipients.map((recipient: Recipient) => (
+          {openedRecipients.map((recipient) => (
             <AvatarWithRecipient
               key={recipient.id}
               recipient={recipient}
@@ -152,7 +153,7 @@ export const StackAvatarsWithTooltip = ({
           <h1 className="text-base font-medium">
             <Trans>Uncompleted</Trans>
           </h1>
-          {uncompletedRecipients.map((recipient: Recipient) => (
+          {uncompletedRecipients.map((recipient) => (
             <AvatarWithRecipient
               key={recipient.id}
               recipient={recipient}

@@ -1,11 +1,11 @@
 import { Trans } from '@lingui/react/macro';
 import type { Team } from '@prisma/client';
-import { DocumentStatus } from '@prisma/client';
+import { DocumentStatus, EnvelopeType } from '@prisma/client';
 import { Link, redirect } from 'react-router';
 
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
-import { getDocumentById } from '@documenso/lib/server-only/document/get-document-by-id';
 import { getDocumentAndSenderByToken } from '@documenso/lib/server-only/document/get-document-by-token';
+import { getEnvelopeById } from '@documenso/lib/server-only/envelope/get-envelope-by-id';
 import { getRecipientByToken } from '@documenso/lib/server-only/recipient/get-recipient-by-token';
 import { getTeamById } from '@documenso/lib/server-only/team/get-team';
 import { formatDocumentsPath } from '@documenso/lib/utils/teams';
@@ -40,12 +40,16 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   let team: Team | null = null;
 
   if (user) {
-    isOwnerOrTeamMember = await getDocumentById({
-      documentId: document.id,
+    isOwnerOrTeamMember = await getEnvelopeById({
+      id: {
+        type: 'documentId',
+        id: document.id,
+      },
+      type: EnvelopeType.DOCUMENT,
       userId: user.id,
       teamId: document.teamId ?? undefined,
     })
-      .then((document) => !!document)
+      .then((envelope) => !!envelope)
       .catch(() => false);
 
     if (document.teamId) {
@@ -56,9 +60,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     }
   }
 
-  const documentPathForEditing = isOwnerOrTeamMember
-    ? formatDocumentsPath(team?.url) + '/' + document.id
-    : null;
+  const documentPathForEditing =
+    isOwnerOrTeamMember && team ? formatDocumentsPath(team.url) + '/' + document.id : null;
 
   return {
     documentPathForEditing,
@@ -75,14 +78,14 @@ export default function WaitingForTurnToSignPage({ loaderData }: Route.Component
           <Trans>Waiting for Your Turn</Trans>
         </h2>
 
-        <p className="text-muted-foreground mt-2 text-sm">
+        <p className="mt-2 text-sm text-muted-foreground">
           <Trans>
             It's currently not your turn to sign. You will receive an email with instructions once
             it's your turn to sign the document.
           </Trans>
         </p>
 
-        <p className="text-muted-foreground mt-4 text-sm">
+        <p className="mt-4 text-sm text-muted-foreground">
           <Trans>Please check your email for updates.</Trans>
         </p>
 
@@ -95,7 +98,9 @@ export default function WaitingForTurnToSignPage({ loaderData }: Route.Component
             </Button>
           ) : (
             <Button variant="link" asChild>
-              <Link to="/documents">Return Home</Link>
+              <Link to="/">
+                <Trans>Return Home</Trans>
+              </Link>
             </Button>
           )}
         </div>

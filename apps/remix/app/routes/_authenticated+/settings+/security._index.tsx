@@ -19,7 +19,7 @@ import { appMetaTags } from '~/utils/meta';
 import type { Route } from './+types/security._index';
 
 export function meta() {
-  return appMetaTags('Security');
+  return appMetaTags(msg`Security`);
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -71,7 +71,7 @@ export default function SettingsSecurity({ loaderData }: Route.ComponentProps) {
         <>
           <PasswordForm user={user} />
 
-          <hr className="border-border/50 mt-6" />
+          <hr className="mt-6 border-border/50" />
         </>
       )}
 
@@ -168,6 +168,48 @@ export default function SettingsSecurity({ loaderData }: Route.ComponentProps) {
         <Button asChild variant="outline" className="bg-background">
           <Link to="/settings/security/activity">
             <Trans>View activity</Trans>
+          </Link>
+        </Button>
+      </Alert>
+
+      <Alert
+        className="mt-6 flex flex-col justify-between p-6 sm:flex-row sm:items-center"
+        variant="neutral"
+      >
+        <div className="mb-4 mr-4 sm:mb-0">
+          <AlertTitle>
+            <Trans>Active sessions</Trans>
+          </AlertTitle>
+
+          <AlertDescription className="mr-2">
+            <Trans>View and manage all active sessions for your account.</Trans>
+          </AlertDescription>
+        </div>
+
+        <Button asChild variant="outline" className="bg-background">
+          <Link to="/settings/security/sessions">
+            <Trans>Manage sessions</Trans>
+          </Link>
+        </Button>
+      </Alert>
+
+      <Alert
+        className="mt-6 flex flex-col justify-between p-6 sm:flex-row sm:items-center"
+        variant="neutral"
+      >
+        <div className="mb-4 mr-4 sm:mb-0">
+          <AlertTitle>
+            <Trans>Linked Accounts</Trans>
+          </AlertTitle>
+
+          <AlertDescription className="mr-2">
+            <Trans>View and manage all login methods linked to your account.</Trans>
+          </AlertDescription>
+        </div>
+
+        <Button asChild variant="outline" className="bg-background">
+          <Link to="/settings/security/linked-accounts">
+            <Trans>Manage linked accounts</Trans>
           </Link>
         </Button>
       </Alert>

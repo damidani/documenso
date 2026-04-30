@@ -10,6 +10,8 @@ export enum DocumentEmailEvents {
   DocumentCompleted = 'documentCompleted',
   DocumentDeleted = 'documentDeleted',
   OwnerDocumentCompleted = 'ownerDocumentCompleted',
+  OwnerRecipientExpired = 'ownerRecipientExpired',
+  OwnerDocumentCreated = 'ownerDocumentCreated',
 }
 
 export const ZDocumentEmailSettingsSchema = z
@@ -52,17 +54,21 @@ export const ZDocumentEmailSettingsSchema = z
       .boolean()
       .describe('Whether to send an email to the document owner when the document is complete.')
       .default(true),
+    ownerRecipientExpired: z
+      .boolean()
+      .describe(
+        "Whether to send an email to the document owner when a recipient's signing window has expired.",
+      )
+      .default(true),
+    ownerDocumentCreated: z
+      .boolean()
+      .describe(
+        'Whether to send an email to the document owner when a document is created from a direct template.',
+      )
+      .default(true),
   })
   .strip()
-  .catch(() => ({
-    recipientSigningRequest: true,
-    recipientRemoved: true,
-    recipientSigned: true,
-    documentPending: true,
-    documentCompleted: true,
-    documentDeleted: true,
-    ownerDocumentCompleted: true,
-  }));
+  .catch(() => ({ ...DEFAULT_DOCUMENT_EMAIL_SETTINGS }));
 
 export type TDocumentEmailSettings = z.infer<typeof ZDocumentEmailSettingsSchema>;
 
@@ -86,5 +92,19 @@ export const extractDerivedDocumentEmailSettings = (
     documentCompleted: false,
     documentDeleted: false,
     ownerDocumentCompleted: emailSettings.ownerDocumentCompleted,
+    ownerRecipientExpired: emailSettings.ownerRecipientExpired,
+    ownerDocumentCreated: emailSettings.ownerDocumentCreated,
   };
+};
+
+export const DEFAULT_DOCUMENT_EMAIL_SETTINGS: TDocumentEmailSettings = {
+  recipientSigningRequest: true,
+  recipientRemoved: true,
+  recipientSigned: true,
+  documentPending: true,
+  documentCompleted: true,
+  documentDeleted: true,
+  ownerDocumentCompleted: true,
+  ownerRecipientExpired: true,
+  ownerDocumentCreated: true,
 };

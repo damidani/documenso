@@ -16,13 +16,14 @@ import { signDirectSignaturePad, signSignaturePad } from '../fixtures/signature'
 test('[NEXT_RECIPIENT_DICTATION]: should allow updating next recipient when dictation is enabled', async ({
   page,
 }) => {
-  const user = await seedUser();
-  const firstSigner = await seedUser();
-  const secondSigner = await seedUser();
-  const thirdSigner = await seedUser();
+  const { user, team } = await seedUser();
+  const { user: firstSigner } = await seedUser();
+  const { user: secondSigner } = await seedUser();
+  const { user: thirdSigner } = await seedUser();
 
   const { recipients, document } = await seedPendingDocumentWithFullFields({
     owner: user,
+    teamId: team.id,
     recipients: [firstSigner, secondSigner, thirdSigner],
     recipientsCreateOptions: [{ signingOrder: 1 }, { signingOrder: 2 }, { signingOrder: 3 }],
     updateDocumentOptions: {
@@ -68,11 +69,7 @@ test('[NEXT_RECIPIENT_DICTATION]: should allow updating next recipient when dict
 
   // Verify next recipient info is shown
   await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(page.getByText('The next recipient to sign this document will be')).toBeVisible();
-
-  // Update next recipient
-  await page.locator('button').filter({ hasText: 'Update Recipient' }).click();
-  await page.waitForTimeout(1000);
+  await expect(page.getByText('Next Recipient Name')).toBeVisible();
 
   // Use dialog context to ensure we're targeting the correct form fields
   const dialog = page.getByRole('dialog');
@@ -84,7 +81,7 @@ test('[NEXT_RECIPIENT_DICTATION]: should allow updating next recipient when dict
   await page.waitForURL(`${signUrl}/complete`);
 
   // Verify document and recipient states
-  const updatedDocument = await prisma.document.findUniqueOrThrow({
+  const updatedDocument = await prisma.envelope.findUniqueOrThrow({
     where: { id: document.id },
     include: {
       recipients: {
@@ -109,12 +106,13 @@ test('[NEXT_RECIPIENT_DICTATION]: should allow updating next recipient when dict
 });
 
 test('[NEXT_RECIPIENT_DICTATION]: should not show dictation UI when disabled', async ({ page }) => {
-  const user = await seedUser();
-  const firstSigner = await seedUser();
-  const secondSigner = await seedUser();
+  const { user, team } = await seedUser();
+  const { user: firstSigner } = await seedUser();
+  const { user: secondSigner } = await seedUser();
 
   const { recipients, document } = await seedPendingDocumentWithFullFields({
     owner: user,
+    teamId: team.id,
     recipients: [firstSigner, secondSigner],
     recipientsCreateOptions: [{ signingOrder: 1 }, { signingOrder: 2 }],
     updateDocumentOptions: {
@@ -170,7 +168,7 @@ test('[NEXT_RECIPIENT_DICTATION]: should not show dictation UI when disabled', a
 
   // Verify document and recipient states
 
-  const updatedDocument = await prisma.document.findUniqueOrThrow({
+  const updatedDocument = await prisma.envelope.findUniqueOrThrow({
     where: { id: document.id },
     include: {
       recipients: {
@@ -194,12 +192,13 @@ test('[NEXT_RECIPIENT_DICTATION]: should not show dictation UI when disabled', a
 });
 
 test('[NEXT_RECIPIENT_DICTATION]: should work with parallel signing flow', async ({ page }) => {
-  const user = await seedUser();
-  const firstSigner = await seedUser();
-  const secondSigner = await seedUser();
+  const { user, team } = await seedUser();
+  const { user: firstSigner } = await seedUser();
+  const { user: secondSigner } = await seedUser();
 
   const { recipients, document } = await seedPendingDocumentWithFullFields({
     owner: user,
+    teamId: team.id,
     recipients: [firstSigner, secondSigner],
     recipientsCreateOptions: [{ signingOrder: 1 }, { signingOrder: 2 }],
     updateDocumentOptions: {
@@ -256,7 +255,7 @@ test('[NEXT_RECIPIENT_DICTATION]: should work with parallel signing flow', async
 
   // Verify final document and recipient states
   await expect(async () => {
-    const updatedDocument = await prisma.document.findUniqueOrThrow({
+    const updatedDocument = await prisma.envelope.findUniqueOrThrow({
       where: { id: document.id },
       include: {
         recipients: {
@@ -278,32 +277,27 @@ test('[NEXT_RECIPIENT_DICTATION]: should work with parallel signing flow', async
 test('[NEXT_RECIPIENT_DICTATION]: should allow assistant to dictate next signer', async ({
   page,
 }) => {
-  const user = await seedUser();
-  const assistant = await seedUser();
-  const signer = await seedUser();
-  const thirdSigner = await seedUser();
+  const { user, team } = await seedUser();
+  const { user: assistant } = await seedUser();
+  const { user: signer } = await seedUser();
+  const { user: thirdSigner } = await seedUser();
 
   const { recipients, document } = await seedPendingDocumentWithFullFields({
     owner: user,
+    teamId: team.id,
     recipients: [assistant, signer, thirdSigner],
     recipientsCreateOptions: [
       { signingOrder: 1, role: RecipientRole.ASSISTANT },
       { signingOrder: 2, role: RecipientRole.SIGNER },
       { signingOrder: 3, role: RecipientRole.SIGNER },
     ],
-    updateDocumentOptions: {
-      documentMeta: {
-        upsert: {
-          create: {
-            allowDictateNextSigner: true,
-            signingOrder: DocumentSigningOrder.SEQUENTIAL,
-          },
-          update: {
-            allowDictateNextSigner: true,
-            signingOrder: DocumentSigningOrder.SEQUENTIAL,
-          },
-        },
-      },
+  });
+
+  await prisma.documentMeta.update({
+    where: { id: document.documentMetaId },
+    data: {
+      allowDictateNextSigner: true,
+      signingOrder: DocumentSigningOrder.SEQUENTIAL,
     },
   });
 
@@ -358,7 +352,7 @@ test('[NEXT_RECIPIENT_DICTATION]: should allow assistant to dictate next signer'
 
   // Verify document and recipient states
   await expect(async () => {
-    const updatedDocument = await prisma.document.findUniqueOrThrow({
+    const updatedDocument = await prisma.envelope.findUniqueOrThrow({
       where: { id: document.id },
       include: {
         recipients: {

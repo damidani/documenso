@@ -62,7 +62,7 @@ export const SettingsSecurityPasskeyTableActions = ({
   });
 
   const { mutateAsync: updatePasskey, isPending: isUpdatingPasskey } =
-    trpc.auth.updatePasskey.useMutation({
+    trpc.auth.passkey.update.useMutation({
       onSuccess: () => {
         toast({
           title: _(msg`Success`),
@@ -84,7 +84,7 @@ export const SettingsSecurityPasskeyTableActions = ({
     });
 
   const { mutateAsync: deletePasskey, isPending: isDeletingPasskey } =
-    trpc.auth.deletePasskey.useMutation({
+    trpc.auth.passkey.delete.useMutation({
       onSuccess: () => {
         toast({
           title: _(msg`Success`),
@@ -191,7 +191,7 @@ export const SettingsSecurityPasskeyTableActions = ({
 
             <DialogDescription className="mt-4">
               <Trans>
-                Are you sure you want to remove the <strong>{passkeyName}</strong> passkey.
+                Are you sure you want to remove the <strong>{passkeyName}</strong> passkey?
               </Trans>
             </DialogDescription>
           </DialogHeader>

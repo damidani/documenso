@@ -1,14 +1,16 @@
-import { useLayoutEffect } from 'react';
+import { useLayoutEffect, useState } from 'react';
 
+import { Trans } from '@lingui/react/macro';
 import { Outlet, useLoaderData } from 'react-router';
 
-import { isCommunityPlan } from '@documenso/ee/server-only/util/is-community-plan';
-import { isUserEnterprise } from '@documenso/ee/server-only/util/is-document-enterprise';
-import { isDocumentPlatform } from '@documenso/ee/server-only/util/is-document-platform';
+import { APP_I18N_OPTIONS } from '@documenso/lib/constants/i18n';
 import { verifyEmbeddingPresignToken } from '@documenso/lib/server-only/embedding-presign/verify-embedding-presign-token';
+import { getOrganisationClaimByTeamId } from '@documenso/lib/server-only/organisation/get-organisation-claims';
+import { ZBaseEmbedAuthoringSchema } from '@documenso/lib/types/embed-authoring-base-schema';
+import { dynamicActivate } from '@documenso/lib/utils/i18n';
 import { TrpcProvider } from '@documenso/trpc/react';
+import { Spinner } from '@documenso/ui/primitives/spinner';
 
-import { ZBaseEmbedAuthoringSchema } from '~/types/embed-authoring-base-schema';
 import { injectCss } from '~/utils/css-vars';
 
 import type { Route } from './+types/_layout';
@@ -27,39 +29,27 @@ export const loader = async ({ request }: Route.LoaderArgs) => {
 
   const result = await verifyEmbeddingPresignToken({ token }).catch(() => null);
 
-  let hasPlatformPlan = false;
-  let hasEnterprisePlan = false;
-  let hasCommunityPlan = false;
+  let allowEmbedAuthoringWhiteLabel = false;
 
   if (result) {
-    [hasCommunityPlan, hasPlatformPlan, hasEnterprisePlan] = await Promise.all([
-      isCommunityPlan({
-        userId: result.userId,
-        teamId: result.teamId ?? undefined,
-      }),
-      isDocumentPlatform({
-        userId: result.userId,
-        teamId: result.teamId,
-      }),
-      isUserEnterprise({
-        userId: result.userId,
-        teamId: result.teamId ?? undefined,
-      }),
-    ]);
+    const organisationClaim = await getOrganisationClaimByTeamId({
+      teamId: result.teamId,
+    });
+
+    allowEmbedAuthoringWhiteLabel = organisationClaim.flags.embedAuthoringWhiteLabel ?? false;
   }
 
   return {
-    hasValidToken: !!result,
     token,
-    hasCommunityPlan,
-    hasPlatformPlan,
-    hasEnterprisePlan,
+    hasValidToken: !!result,
+    allowEmbedAuthoringWhiteLabel,
   };
 };
 
 export default function AuthoringLayout() {
-  const { hasValidToken, token, hasCommunityPlan, hasPlatformPlan, hasEnterprisePlan } =
-    useLoaderData<typeof loader>();
+  const { token, hasValidToken, allowEmbedAuthoringWhiteLabel } = useLoaderData<typeof loader>();
+
+  const [hasFinishedInit, setHasFinishedInit] = useState(false);
 
   useLayoutEffect(() => {
     try {
@@ -70,28 +60,50 @@ export default function AuthoringLayout() {
       );
 
       if (!result.success) {
+        setHasFinishedInit(true);
         return;
       }
 
-      const { css, cssVars, darkModeDisabled } = result.data;
+      const { css, cssVars, darkModeDisabled, language } = result.data;
 
       if (darkModeDisabled) {
         document.documentElement.classList.add('dark-mode-disabled');
       }
 
-      if (hasCommunityPlan || hasPlatformPlan || hasEnterprisePlan) {
+      if (allowEmbedAuthoringWhiteLabel) {
         injectCss({
           css,
           cssVars,
         });
       }
+
+      if (language && language !== APP_I18N_OPTIONS.sourceLang) {
+        void dynamicActivate(language).finally(() => {
+          setHasFinishedInit(true);
+        });
+      } else {
+        setHasFinishedInit(true);
+      }
     } catch (error) {
       console.error(error);
+      setHasFinishedInit(true);
     }
   }, []);
 
+  if (!hasFinishedInit) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+
   if (!hasValidToken) {
-    return <div>Invalid embedding presign token provided</div>;
+    return (
+      <div>
+        <Trans>Invalid embedding presign token provided</Trans>
+      </div>
+    );
   }
 
   return (

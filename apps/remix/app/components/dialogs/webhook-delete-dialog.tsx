@@ -30,7 +30,7 @@ import {
 import { Input } from '@documenso/ui/primitives/input';
 import { useToast } from '@documenso/ui/primitives/use-toast';
 
-import { useOptionalCurrentTeam } from '~/providers/team';
+import { useCurrentTeam } from '~/providers/team';
 
 export type WebhookDeleteDialogProps = {
   webhook: Pick<Webhook, 'id' | 'webhookUrl'>;
@@ -42,7 +42,7 @@ export const WebhookDeleteDialog = ({ webhook, children }: WebhookDeleteDialogPr
   const { _ } = useLingui();
   const { toast } = useToast();
 
-  const team = useOptionalCurrentTeam();
+  const team = useCurrentTeam();
 
   const [open, setOpen] = useState(false);
 
@@ -67,7 +67,7 @@ export const WebhookDeleteDialog = ({ webhook, children }: WebhookDeleteDialogPr
 
   const onSubmit = async () => {
     try {
-      await deleteWebhook({ id: webhook.id, teamId: team?.id });
+      await deleteWebhook({ id: webhook.id });
 
       toast({
         title: _(msg`Webhook deleted`),
@@ -146,26 +146,18 @@ export const WebhookDeleteDialog = ({ webhook, children }: WebhookDeleteDialogPr
               />
 
               <DialogFooter>
-                <div className="flex w-full flex-nowrap gap-4">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="flex-1"
-                    onClick={() => setOpen(false)}
-                  >
-                    <Trans>Cancel</Trans>
-                  </Button>
+                <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+                  <Trans>Cancel</Trans>
+                </Button>
 
-                  <Button
-                    type="submit"
-                    variant="destructive"
-                    className="flex-1"
-                    disabled={!form.formState.isValid}
-                    loading={form.formState.isSubmitting}
-                  >
-                    <Trans>I'm sure! Delete it</Trans>
-                  </Button>
-                </div>
+                <Button
+                  type="submit"
+                  variant="destructive"
+                  disabled={!form.formState.isValid}
+                  loading={form.formState.isSubmitting}
+                >
+                  <Trans>Delete</Trans>
+                </Button>
               </DialogFooter>
             </fieldset>
           </form>

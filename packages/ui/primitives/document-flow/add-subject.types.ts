@@ -2,9 +2,13 @@ import { DocumentDistributionMethod } from '@prisma/client';
 import { z } from 'zod';
 
 import { ZDocumentEmailSettingsSchema } from '@documenso/lib/types/document-email';
+import { zEmail } from '@documenso/lib/utils/zod';
 
 export const ZAddSubjectFormSchema = z.object({
   meta: z.object({
+    emailId: z.string().nullable(),
+    emailReplyTo: z.preprocess((val) => (val === '' ? undefined : val), zEmail().optional()),
+    // emailReplyName: z.string().optional(),
     subject: z.string(),
     message: z.string(),
     distributionMethod: z

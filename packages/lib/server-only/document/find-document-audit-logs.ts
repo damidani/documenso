@@ -1,4 +1,4 @@
-import type { DocumentAuditLog, Prisma } from '@prisma/client';
+import { type DocumentAuditLog, EnvelopeType, type Prisma } from '@prisma/client';
 
 import { prisma } from '@documenso/prisma';
 
@@ -6,10 +6,11 @@ import { AppError, AppErrorCode } from '../../errors/app-error';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../../types/document-audit-logs';
 import type { FindResultResponse } from '../../types/search-params';
 import { parseDocumentAuditLogData } from '../../utils/document-audit-logs';
+import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 
 export interface FindDocumentAuditLogsOptions {
   userId: number;
-  teamId?: number;
+  teamId: number;
   documentId: number;
   page?: number;
   perPage?: number;
@@ -34,33 +35,26 @@ export const findDocumentAuditLogs = async ({
   const orderByColumn = orderBy?.column ?? 'createdAt';
   const orderByDirection = orderBy?.direction ?? 'desc';
 
-  const document = await prisma.document.findFirst({
-    where: {
+  const { envelopeWhereInput } = await getEnvelopeWhereInput({
+    id: {
+      type: 'documentId',
       id: documentId,
-      ...(teamId
-        ? {
-            team: {
-              id: teamId,
-              members: {
-                some: {
-                  userId,
-                },
-              },
-            },
-          }
-        : {
-            userId,
-            teamId: null,
-          }),
     },
+    type: EnvelopeType.DOCUMENT,
+    userId,
+    teamId,
   });
 
-  if (!document) {
+  const envelope = await prisma.envelope.findUnique({
+    where: envelopeWhereInput,
+  });
+
+  if (!envelope) {
     throw new AppError(AppErrorCode.NOT_FOUND);
   }
 
   const whereClause: Prisma.DocumentAuditLogWhereInput = {
-    documentId,
+    envelopeId: envelope.id,
   };
 
   // Filter events down to what we consider recent activity.

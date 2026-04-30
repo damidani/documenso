@@ -1,17 +1,17 @@
+import { EnvelopeType } from '@prisma/client';
+
 import { completeDocumentWithToken } from '@documenso/lib/server-only/document/complete-document-with-token';
 import { rejectDocumentWithToken } from '@documenso/lib/server-only/document/reject-document-with-token';
-import { createDocumentRecipients } from '@documenso/lib/server-only/recipient/create-document-recipients';
-import { createTemplateRecipients } from '@documenso/lib/server-only/recipient/create-template-recipients';
-import { deleteDocumentRecipient } from '@documenso/lib/server-only/recipient/delete-document-recipient';
-import { deleteTemplateRecipient } from '@documenso/lib/server-only/recipient/delete-template-recipient';
+import { createEnvelopeRecipients } from '@documenso/lib/server-only/recipient/create-envelope-recipients';
+import { deleteEnvelopeRecipient } from '@documenso/lib/server-only/recipient/delete-envelope-recipient';
 import { getRecipientById } from '@documenso/lib/server-only/recipient/get-recipient-by-id';
 import { setDocumentRecipients } from '@documenso/lib/server-only/recipient/set-document-recipients';
 import { setTemplateRecipients } from '@documenso/lib/server-only/recipient/set-template-recipients';
-import { updateDocumentRecipients } from '@documenso/lib/server-only/recipient/update-document-recipients';
-import { updateTemplateRecipients } from '@documenso/lib/server-only/recipient/update-template-recipients';
+import { updateEnvelopeRecipients } from '@documenso/lib/server-only/recipient/update-envelope-recipients';
 
-import { ZGenericSuccessResponse, ZSuccessResponseSchema } from '../document-router/schema';
+import { ZGenericSuccessResponse, ZSuccessResponseSchema } from '../schema';
 import { authenticatedProcedure, procedure, router } from '../trpc';
+import { findRecipientSuggestionsRoute } from './find-recipient-suggestions';
 import {
   ZCompleteDocumentWithTokenMutationSchema,
   ZCreateDocumentRecipientRequestSchema,
@@ -42,6 +42,10 @@ import {
 } from './schema';
 
 export const recipientRouter = router({
+  suggestions: {
+    find: findRecipientSuggestionsRoute,
+  },
+
   /**
    * @public
    */
@@ -62,10 +66,17 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { recipientId } = input;
 
+      ctx.logger.info({
+        input: {
+          recipientId,
+        },
+      });
+
       return await getRecipientById({
         userId: ctx.user.id,
         teamId,
         recipientId,
+        type: EnvelopeType.DOCUMENT,
       });
     }),
 
@@ -88,10 +99,19 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { documentId, recipient } = input;
 
-      const createdRecipients = await createDocumentRecipients({
+      ctx.logger.info({
+        input: {
+          documentId,
+        },
+      });
+
+      const createdRecipients = await createEnvelopeRecipients({
         userId: ctx.user.id,
         teamId,
-        documentId,
+        id: {
+          type: 'documentId',
+          id: documentId,
+        },
         recipients: [recipient],
         requestMetadata: ctx.metadata,
       });
@@ -118,10 +138,19 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { documentId, recipients } = input;
 
-      return await createDocumentRecipients({
+      ctx.logger.info({
+        input: {
+          documentId,
+        },
+      });
+
+      return await createEnvelopeRecipients({
         userId: ctx.user.id,
         teamId,
-        documentId,
+        id: {
+          type: 'documentId',
+          id: documentId,
+        },
         recipients,
         requestMetadata: ctx.metadata,
       });
@@ -146,10 +175,19 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { documentId, recipient } = input;
 
-      const updatedRecipients = await updateDocumentRecipients({
+      ctx.logger.info({
+        input: {
+          documentId,
+        },
+      });
+
+      const updatedRecipients = await updateEnvelopeRecipients({
         userId: ctx.user.id,
         teamId,
-        documentId,
+        id: {
+          type: 'documentId',
+          id: documentId,
+        },
         recipients: [recipient],
         requestMetadata: ctx.metadata,
       });
@@ -176,10 +214,19 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { documentId, recipients } = input;
 
-      return await updateDocumentRecipients({
+      ctx.logger.info({
+        input: {
+          documentId,
+        },
+      });
+
+      return await updateEnvelopeRecipients({
         userId: ctx.user.id,
         teamId,
-        documentId,
+        id: {
+          type: 'documentId',
+          id: documentId,
+        },
         recipients,
         requestMetadata: ctx.metadata,
       });
@@ -203,7 +250,13 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { recipientId } = input;
 
-      await deleteDocumentRecipient({
+      ctx.logger.info({
+        input: {
+          recipientId,
+        },
+      });
+
+      await deleteEnvelopeRecipient({
         userId: ctx.user.id,
         teamId,
         recipientId,
@@ -223,12 +276,21 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { documentId, recipients } = input;
 
+      ctx.logger.info({
+        input: {
+          documentId,
+        },
+      });
+
       return await setDocumentRecipients({
         userId: ctx.user.id,
         teamId,
-        documentId,
+        id: {
+          type: 'documentId',
+          id: documentId,
+        },
         recipients: recipients.map((recipient) => ({
-          id: recipient.nativeId,
+          id: recipient.id,
           email: recipient.email,
           name: recipient.name,
           role: recipient.role,
@@ -259,10 +321,17 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { recipientId } = input;
 
+      ctx.logger.info({
+        input: {
+          recipientId,
+        },
+      });
+
       return await getRecipientById({
         userId: ctx.user.id,
         teamId,
         recipientId,
+        type: EnvelopeType.TEMPLATE,
       });
     }),
 
@@ -285,11 +354,21 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { templateId, recipient } = input;
 
-      const createdRecipients = await createTemplateRecipients({
+      ctx.logger.info({
+        input: {
+          templateId,
+        },
+      });
+
+      const createdRecipients = await createEnvelopeRecipients({
         userId: ctx.user.id,
         teamId,
-        templateId,
+        id: {
+          id: templateId,
+          type: 'templateId',
+        },
         recipients: [recipient],
+        requestMetadata: ctx.metadata,
       });
 
       return createdRecipients.recipients[0];
@@ -314,11 +393,21 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { templateId, recipients } = input;
 
-      return await createTemplateRecipients({
+      ctx.logger.info({
+        input: {
+          templateId,
+        },
+      });
+
+      return await createEnvelopeRecipients({
         userId: ctx.user.id,
         teamId,
-        templateId,
+        id: {
+          id: templateId,
+          type: 'templateId',
+        },
         recipients,
+        requestMetadata: ctx.metadata,
       });
     }),
 
@@ -341,11 +430,21 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { templateId, recipient } = input;
 
-      const updatedRecipients = await updateTemplateRecipients({
+      ctx.logger.info({
+        input: {
+          templateId,
+        },
+      });
+
+      const updatedRecipients = await updateEnvelopeRecipients({
         userId: ctx.user.id,
         teamId,
-        templateId,
+        id: {
+          type: 'templateId',
+          id: templateId,
+        },
         recipients: [recipient],
+        requestMetadata: ctx.metadata,
       });
 
       return updatedRecipients.recipients[0];
@@ -370,11 +469,21 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { templateId, recipients } = input;
 
-      return await updateTemplateRecipients({
+      ctx.logger.info({
+        input: {
+          templateId,
+        },
+      });
+
+      return await updateEnvelopeRecipients({
         userId: ctx.user.id,
         teamId,
-        templateId,
+        id: {
+          type: 'templateId',
+          id: templateId,
+        },
         recipients,
+        requestMetadata: ctx.metadata,
       });
     }),
 
@@ -396,10 +505,17 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { recipientId } = input;
 
-      await deleteTemplateRecipient({
+      ctx.logger.info({
+        input: {
+          recipientId,
+        },
+      });
+
+      await deleteEnvelopeRecipient({
         recipientId,
         userId: ctx.user.id,
         teamId,
+        requestMetadata: ctx.metadata,
       });
 
       return ZGenericSuccessResponse;
@@ -415,12 +531,21 @@ export const recipientRouter = router({
       const { teamId } = ctx;
       const { templateId, recipients } = input;
 
+      ctx.logger.info({
+        input: {
+          templateId,
+        },
+      });
+
       return await setTemplateRecipients({
         userId: ctx.user.id,
         teamId,
-        templateId,
+        id: {
+          type: 'templateId',
+          id: templateId,
+        },
         recipients: recipients.map((recipient) => ({
-          id: recipient.nativeId,
+          id: recipient.id,
           email: recipient.email,
           name: recipient.name,
           role: recipient.role,
@@ -436,13 +561,23 @@ export const recipientRouter = router({
   completeDocumentWithToken: procedure
     .input(ZCompleteDocumentWithTokenMutationSchema)
     .mutation(async ({ input, ctx }) => {
-      const { token, documentId, authOptions, nextSigner } = input;
+      const { token, documentId, accessAuthOptions, nextSigner, recipientOverride } = input;
 
-      return await completeDocumentWithToken({
+      ctx.logger.info({
+        input: {
+          documentId,
+        },
+      });
+
+      await completeDocumentWithToken({
         token,
-        documentId,
-        authOptions,
+        id: {
+          type: 'documentId',
+          id: documentId,
+        },
+        accessAuthOptions,
         nextSigner,
+        recipientOverride,
         userId: ctx.user?.id,
         requestMetadata: ctx.metadata.requestMetadata,
       });
@@ -456,9 +591,18 @@ export const recipientRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { token, documentId, reason } = input;
 
+      ctx.logger.info({
+        input: {
+          documentId,
+        },
+      });
+
       return await rejectDocumentWithToken({
         token,
-        documentId,
+        id: {
+          type: 'documentId',
+          id: documentId,
+        },
         reason,
         requestMetadata: ctx.metadata.requestMetadata,
       });

@@ -32,9 +32,15 @@ export type JobDefinition<Name extends string = string, Schema = any> = {
   name: string;
   version: string;
   enabled?: boolean;
+  optimizeParallelism?: boolean;
   trigger: {
     name: Name;
     schema?: z.ZodType<Schema>;
+    /**
+     * Optional cron expression (e.g., "* * * * *" for every minute).
+     * When set, the job runs on a schedule instead of being event-triggered.
+     */
+    cron?: string;
   };
   handler: (options: { payload: Schema; io: JobRunIO }) => Promise<Json | void>;
 };

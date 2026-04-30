@@ -2,12 +2,13 @@ import { useState } from 'react';
 
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import type { DocumentMeta, Field, Recipient, TemplateMeta } from '@prisma/client';
+import type { DocumentMeta, Field } from '@prisma/client';
 import { SigningStatus } from '@prisma/client';
 import { Clock, EyeOffIcon } from 'lucide-react';
 
 import { PDF_VIEWER_PAGE_SELECTOR } from '@documenso/lib/constants/pdf-viewer';
-import type { DocumentField } from '@documenso/lib/server-only/field/get-fields-for-document';
+import { isTemplateRecipientEmailPlaceholder } from '@documenso/lib/constants/template';
+import type { TRecipientLite } from '@documenso/lib/types/recipient';
 import { parseMessageDescriptor } from '@documenso/lib/utils/i18n';
 import { extractInitials } from '@documenso/lib/utils/recipient-formatter';
 import { FieldRootContainer } from '@documenso/ui/components/field/field';
@@ -21,9 +22,25 @@ import { PopoverHover } from '@documenso/ui/primitives/popover';
 import { getRecipientColorStyles } from '../../lib/recipient-colors';
 import { FieldContent } from '../../primitives/document-flow/field-content';
 
+const getRecipientDisplayText = (recipient: { name: string; email: string }) => {
+  if (recipient.name && !isTemplateRecipientEmailPlaceholder(recipient.email)) {
+    return `${recipient.name} (${recipient.email})`;
+  }
+
+  if (recipient.name && isTemplateRecipientEmailPlaceholder(recipient.email)) {
+    return recipient.name;
+  }
+
+  return recipient.email;
+};
+
+export type DocumentField = Field & {
+  recipient: Pick<TRecipientLite, 'name' | 'email' | 'signingStatus'>;
+};
+
 export type DocumentReadOnlyFieldsProps = {
   fields: DocumentField[];
-  documentMeta?: DocumentMeta | TemplateMeta;
+  documentMeta?: Pick<DocumentMeta, 'dateFormat'>;
 
   showFieldStatus?: boolean;
 
@@ -52,7 +69,7 @@ export type DocumentReadOnlyFieldsProps = {
 
 export const mapFieldsWithRecipients = (
   fields: Field[],
-  recipients: Recipient[],
+  recipients: TRecipientLite[],
 ): DocumentField[] => {
   return fields.map((field) => {
     const recipient = recipients.find((recipient) => recipient.id === field.recipientId) || {
@@ -90,13 +107,11 @@ export const DocumentReadOnlyFields = ({
             <FieldRootContainer
               field={field}
               key={field.id}
+              readonly={true}
               color={
                 showRecipientColors
                   ? getRecipientColorStyles(
-                      Math.max(
-                        recipientIds.findIndex((id) => id === field.recipientId),
-                        0,
-                      ),
+                      recipientIds.findIndex((id) => id === field.recipientId),
                     )
                   : undefined
               }
@@ -144,10 +159,8 @@ export const DocumentReadOnlyFields = ({
                       </span>
                     </p>
 
-                    <p className="text-muted-foreground mt-1 text-center text-xs">
-                      {field.recipient.name
-                        ? `${field.recipient.name} (${field.recipient.email})`
-                        : field.recipient.email}{' '}
+                    <p className="mt-1 text-center text-xs text-muted-foreground">
+                      {getRecipientDisplayText(field.recipient)}
                     </p>
 
                     <button

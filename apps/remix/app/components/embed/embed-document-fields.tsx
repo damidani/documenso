@@ -1,4 +1,4 @@
-import type { DocumentMeta, TemplateMeta } from '@prisma/client';
+import type { DocumentMeta } from '@prisma/client';
 import { type Field, FieldType } from '@prisma/client';
 import { match } from 'ts-pattern';
 
@@ -32,7 +32,14 @@ import { DocumentSigningTextField } from '~/components/general/document-signing/
 
 export type EmbedDocumentFieldsProps = {
   fields: Field[];
-  metadata?: DocumentMeta | TemplateMeta | null;
+  metadata?: Pick<
+    DocumentMeta,
+    | 'timezone'
+    | 'dateFormat'
+    | 'typedSignatureEnabled'
+    | 'uploadSignatureEnabled'
+    | 'drawSignatureEnabled'
+  > | null;
   onSignField?: (value: TSignFieldWithTokenMutationSchema) => Promise<void> | void;
   onUnsignField?: (value: TRemovedSignedFieldWithTokenMutationSchema) => Promise<void> | void;
 };

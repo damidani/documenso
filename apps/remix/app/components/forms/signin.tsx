@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
+import type { TurnstileInstance } from '@marsidev/react-turnstile';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { browserSupportsWebAuthn, startAuthentication } from '@simplewebauthn/browser';
 import { KeyRoundIcon } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -16,7 +18,9 @@ import { z } from 'zod';
 
 import { authClient } from '@documenso/auth/client';
 import { AuthenticationErrorCode } from '@documenso/auth/server/lib/errors/error-codes';
-import { AppError } from '@documenso/lib/errors/app-error';
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { env } from '@documenso/lib/utils/env';
+import { zEmail } from '@documenso/lib/utils/zod';
 import { trpc } from '@documenso/trpc/react';
 import { ZCurrentPasswordSchema } from '@documenso/trpc/server/auth-router/schema';
 import { cn } from '@documenso/ui/lib/utils';
@@ -55,10 +59,10 @@ const handleFallbackErrorMessages = (code: string) => {
   return message;
 };
 
-const LOGIN_REDIRECT_PATH = '/documents';
+const LOGIN_REDIRECT_PATH = '/';
 
 export const ZSignInFormSchema = z.object({
-  email: z.string().email().min(1),
+  email: zEmail().min(1),
   password: ZCurrentPasswordSchema,
   totpCode: z.string().trim().optional(),
   backupCode: z.string().trim().optional(),
@@ -70,6 +74,7 @@ export type SignInFormProps = {
   className?: string;
   initialEmail?: string;
   isGoogleSSOEnabled?: boolean;
+  isMicrosoftSSOEnabled?: boolean;
   isOIDCSSOEnabled?: boolean;
   oidcProviderLabel?: string;
   returnTo?: string;
@@ -79,6 +84,7 @@ export const SignInForm = ({
   className,
   initialEmail,
   isGoogleSSOEnabled,
+  isMicrosoftSSOEnabled,
   isOIDCSSOEnabled,
   oidcProviderLabel,
   returnTo,
@@ -90,10 +96,17 @@ export const SignInForm = ({
 
   const [isTwoFactorAuthenticationDialogOpen, setIsTwoFactorAuthenticationDialogOpen] =
     useState(false);
+  const [isEmbeddedRedirect, setIsEmbeddedRedirect] = useState(false);
 
   const [twoFactorAuthenticationMethod, setTwoFactorAuthenticationMethod] = useState<
     'totp' | 'backup'
   >('totp');
+
+  const hasSocialAuthEnabled = isGoogleSSOEnabled || isMicrosoftSSOEnabled || isOIDCSSOEnabled;
+
+  const turnstileSiteKey = env('NEXT_PUBLIC_TURNSTILE_SITE_KEY');
+  const turnstileRef = useRef<TurnstileInstance>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   const [isPasskeyLoading, setIsPasskeyLoading] = useState(false);
 
@@ -114,7 +127,7 @@ export const SignInForm = ({
   }, [returnTo]);
 
   const { mutateAsync: createPasskeySigninOptions } =
-    trpc.auth.createPasskeySigninOptions.useMutation();
+    trpc.auth.passkey.createSigninOptions.useMutation();
 
   const form = useForm<TSignInFormSchema>({
     values: {
@@ -166,7 +179,7 @@ export const SignInForm = ({
 
       const { options, sessionId } = await createPasskeySigninOptions();
 
-      const credential = await startAuthentication(options);
+      const credential = await startAuthentication({ optionsJSON: options });
 
       await authClient.passkey.signIn({
         credential: JSON.stringify(credential),
@@ -196,7 +209,7 @@ export const SignInForm = ({
         .otherwise(() => handleFallbackErrorMessages(error.code));
 
       toast({
-        title: 'Something went wrong',
+        title: _(msg`Something went wrong`),
         description: _(errorMessage),
         duration: 10000,
         variant: 'destructive',
@@ -211,6 +224,7 @@ export const SignInForm = ({
         password,
         totpCode,
         backupCode,
+        captchaToken: captchaToken ?? undefined,
         redirectPath,
       });
     } catch (err) {
@@ -239,11 +253,15 @@ export const SignInForm = ({
       const errorMessage = match(error.code)
         .with(
           AuthenticationErrorCode.InvalidCredentials,
-          () => msg`The email or password provided is incorrect`,
+          () => msg`The email or password provided is incorrect.`,
         )
         .with(
           AuthenticationErrorCode.InvalidTwoFactorCode,
-          () => msg`The two-factor authentication code provided is incorrect`,
+          () => msg`The two-factor authentication code provided is incorrect.`,
+        )
+        .with(
+          AppErrorCode.INVALID_CAPTCHA,
+          () => msg`We were unable to verify that you're human. Please try again.`,
         )
         .otherwise(() => handleFallbackErrorMessages(error.code));
 
@@ -252,12 +270,31 @@ export const SignInForm = ({
         description: _(errorMessage),
         variant: 'destructive',
       });
+
+      turnstileRef.current?.reset();
+      setCaptchaToken(null);
     }
   };
 
   const onSignInWithGoogleClick = async () => {
     try {
       await authClient.google.signIn({
+        redirectPath,
+      });
+    } catch (err) {
+      toast({
+        title: _(msg`An unknown error occurred`),
+        description: _(
+          msg`We encountered an unknown error while attempting to sign you In. Please try again later.`,
+        ),
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const onSignInWithMicrosoftClick = async () => {
+    try {
+      await authClient.microsoft.signIn({
         redirectPath,
       });
     } catch (err) {
@@ -297,6 +334,8 @@ export const SignInForm = ({
     if (email) {
       form.setValue('email', email);
     }
+
+    setIsEmbeddedRedirect(params.get('embedded') === 'true');
   }, [form]);
 
   return (
@@ -345,7 +384,7 @@ export const SignInForm = ({
                 <p className="mt-2 text-right">
                   <Link
                     to="/forgot-password"
-                    className="text-muted-foreground text-sm duration-200 hover:opacity-70"
+                    className="text-sm text-muted-foreground duration-200 hover:opacity-70"
                   >
                     <Trans>Forgot your password?</Trans>
                   </Link>
@@ -353,6 +392,19 @@ export const SignInForm = ({
               </FormItem>
             )}
           />
+
+          {turnstileSiteKey && (
+            <Turnstile
+              ref={turnstileRef}
+              siteKey={turnstileSiteKey}
+              onSuccess={setCaptchaToken}
+              onExpire={() => setCaptchaToken(null)}
+              options={{
+                size: 'flexible',
+                appearance: 'interaction-only',
+              }}
+            />
+          )}
 
           <Button
             type="submit"
@@ -363,42 +415,64 @@ export const SignInForm = ({
             {isSubmitting ? <Trans>Signing in...</Trans> : <Trans>Sign In</Trans>}
           </Button>
 
-          {(isGoogleSSOEnabled || isOIDCSSOEnabled) && (
-            <div className="relative flex items-center justify-center gap-x-4 py-2 text-xs uppercase">
-              <div className="bg-border h-px flex-1" />
-              <span className="text-muted-foreground bg-transparent">
-                <Trans>Or continue with</Trans>
-              </span>
-              <div className="bg-border h-px flex-1" />
-            </div>
-          )}
+          {!isEmbeddedRedirect && (
+            <>
+              {hasSocialAuthEnabled && (
+                <div className="relative flex items-center justify-center gap-x-4 py-2 text-xs uppercase">
+                  <div className="h-px flex-1 bg-border" />
+                  <span className="bg-transparent text-muted-foreground">
+                    <Trans>Or continue with</Trans>
+                  </span>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+              )}
 
-          {isGoogleSSOEnabled && (
-            <Button
-              type="button"
-              size="lg"
-              variant="outline"
-              className="bg-background text-muted-foreground border"
-              disabled={isSubmitting}
-              onClick={onSignInWithGoogleClick}
-            >
-              <FcGoogle className="mr-2 h-5 w-5" />
-              Google
-            </Button>
-          )}
+              {isGoogleSSOEnabled && (
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  className="border bg-background text-muted-foreground"
+                  disabled={isSubmitting}
+                  onClick={onSignInWithGoogleClick}
+                >
+                  <FcGoogle className="mr-2 h-5 w-5" />
+                  Google
+                </Button>
+              )}
 
-          {isOIDCSSOEnabled && (
-            <Button
-              type="button"
-              size="lg"
-              variant="outline"
-              className="bg-background text-muted-foreground border"
-              disabled={isSubmitting}
-              onClick={onSignInWithOIDCClick}
-            >
-              <FaIdCardClip className="mr-2 h-5 w-5" />
-              {oidcProviderLabel || 'OIDC'}
-            </Button>
+              {isMicrosoftSSOEnabled && (
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  className="border bg-background text-muted-foreground"
+                  disabled={isSubmitting}
+                  onClick={onSignInWithMicrosoftClick}
+                >
+                  <img
+                    className="mr-2 h-4 w-4"
+                    alt="Microsoft Logo"
+                    src={'/static/microsoft.svg'}
+                  />
+                  Microsoft
+                </Button>
+              )}
+
+              {isOIDCSSOEnabled && (
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  className="border bg-background text-muted-foreground"
+                  disabled={isSubmitting}
+                  onClick={onSignInWithOIDCClick}
+                >
+                  <FaIdCardClip className="mr-2 h-5 w-5" />
+                  {oidcProviderLabel || 'OIDC'}
+                </Button>
+              )}
+            </>
           )}
 
           <Button
@@ -407,7 +481,7 @@ export const SignInForm = ({
             variant="outline"
             disabled={isSubmitting}
             loading={isPasskeyLoading}
-            className="bg-background text-muted-foreground border"
+            className="border bg-background text-muted-foreground"
             onClick={onSignInWithPasskey}
           >
             {!isPasskeyLoading && <KeyRoundIcon className="-ml-1 mr-1 h-5 w-5" />}

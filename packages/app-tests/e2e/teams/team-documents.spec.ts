@@ -1,19 +1,27 @@
 import { expect, test } from '@playwright/test';
 import { DocumentStatus, DocumentVisibility, TeamMemberRole } from '@prisma/client';
 
-import { seedBlankDocument } from '@documenso/prisma/seed/documents';
-import { seedDocuments, seedTeamDocuments } from '@documenso/prisma/seed/documents';
+import {
+  seedBlankDocument,
+  seedDocuments,
+  seedTeamDocuments,
+} from '@documenso/prisma/seed/documents';
 import { seedTeam, seedTeamEmail, seedTeamMember } from '@documenso/prisma/seed/teams';
 import { seedUser } from '@documenso/prisma/seed/users';
 
 import { apiSignin, apiSignout } from '../fixtures/authentication';
 import { checkDocumentTabCount } from '../fixtures/documents';
+import {
+  expectTextToBeVisible,
+  expectToastTextToBeVisible,
+  openDropdownMenu,
+} from '../fixtures/generic';
 
 test('[TEAMS]: check team documents count', async ({ page }) => {
-  const { team, teamMember2 } = await seedTeamDocuments();
+  const { team, teamOwner, teamMember2 } = await seedTeamDocuments();
 
   // Run the test twice, once with the team owner and once with a team member to ensure the counts are the same.
-  for (const user of [team.owner, teamMember2]) {
+  for (const user of [teamOwner, teamMember2]) {
     await apiSignin({
       page,
       email: user.email,
@@ -44,8 +52,12 @@ test('[TEAMS]: check team documents count', async ({ page }) => {
 });
 
 test('[TEAMS]: check team documents count with internal team email', async ({ page }) => {
-  const { team, teamMember2, teamMember4 } = await seedTeamDocuments();
-  const { team: team2, teamMember2: team2Member2 } = await seedTeamDocuments();
+  const { team, teamOwner, teamMember2, teamMember4 } = await seedTeamDocuments();
+  const {
+    team: team2,
+    teamOwner: team2Owner,
+    teamMember2: team2Member2,
+  } = await seedTeamDocuments();
 
   const teamEmailMember = teamMember4;
 
@@ -54,7 +66,7 @@ test('[TEAMS]: check team documents count with internal team email', async ({ pa
     teamId: team.id,
   });
 
-  const testUser1 = await seedUser();
+  const { user: testUser1, team: testUser1Team } = await seedUser();
 
   await seedDocuments([
     // Documents sent from the team email account.
@@ -62,52 +74,53 @@ test('[TEAMS]: check team documents count with internal team email', async ({ pa
       sender: teamEmailMember,
       recipients: [testUser1],
       type: DocumentStatus.COMPLETED,
-      documentOptions: {
-        teamId: team.id,
-      },
+      teamId: team.id,
+      documentOptions: {},
     },
     {
       sender: teamEmailMember,
       recipients: [testUser1],
       type: DocumentStatus.PENDING,
-      documentOptions: {
-        teamId: team.id,
-      },
+      teamId: team.id,
+      documentOptions: {},
     },
     {
       sender: teamMember4,
       recipients: [testUser1],
       type: DocumentStatus.DRAFT,
+      teamId: team.id,
     },
     // Documents sent to the team email account.
     {
       sender: testUser1,
       recipients: [teamEmailMember],
       type: DocumentStatus.COMPLETED,
+      teamId: testUser1Team.id,
     },
     {
       sender: testUser1,
       recipients: [teamEmailMember],
       type: DocumentStatus.PENDING,
+      teamId: testUser1Team.id,
     },
     {
       sender: testUser1,
       recipients: [teamEmailMember],
       type: DocumentStatus.DRAFT,
+      teamId: testUser1Team.id,
     },
     // Document sent to the team email account from another team.
     {
       sender: team2Member2,
       recipients: [teamEmailMember],
       type: DocumentStatus.PENDING,
-      documentOptions: {
-        teamId: team2.id,
-      },
+      teamId: team2.id,
+      documentOptions: {},
     },
   ]);
 
   // Run the test twice, one with the team owner and once with the team member email to ensure the counts are the same.
-  for (const user of [team.owner, teamEmailMember]) {
+  for (const user of [teamOwner, teamEmailMember]) {
     await apiSignin({
       page,
       email: user.email,
@@ -138,7 +151,8 @@ test('[TEAMS]: check team documents count with internal team email', async ({ pa
 });
 
 test('[TEAMS]: check team documents count with external team email', async ({ page }) => {
-  const { team, teamMember2 } = await seedTeamDocuments();
+  const { team, teamOwner, teamMember2 } = await seedTeamDocuments();
+
   const { team: team2, teamMember2: team2Member2 } = await seedTeamDocuments();
 
   const teamEmail = `external-team-email-${team.id}@test.documenso.com`;
@@ -148,7 +162,9 @@ test('[TEAMS]: check team documents count with external team email', async ({ pa
     teamId: team.id,
   });
 
-  const testUser1 = await seedUser();
+  const { user: testUser1, team: testUser1Team } = await seedUser({
+    isPersonalOrganisation: true,
+  });
 
   await seedDocuments([
     // Documents sent to the team email account.
@@ -156,42 +172,39 @@ test('[TEAMS]: check team documents count with external team email', async ({ pa
       sender: testUser1,
       recipients: [teamEmail],
       type: DocumentStatus.COMPLETED,
+      teamId: testUser1Team.id,
     },
     {
       sender: testUser1,
       recipients: [teamEmail],
       type: DocumentStatus.PENDING,
+      teamId: testUser1Team.id,
     },
     {
       sender: testUser1,
       recipients: [teamEmail],
       type: DocumentStatus.DRAFT,
+      teamId: testUser1Team.id,
     },
     // Document sent to the team email account from another team.
     {
       sender: team2Member2,
       recipients: [teamEmail],
       type: DocumentStatus.PENDING,
-      documentOptions: {
-        teamId: team2.id,
-      },
+      teamId: team2.id,
     },
     // Document sent to the team email account from an individual user.
     {
       sender: testUser1,
       recipients: [teamEmail],
       type: DocumentStatus.PENDING,
-      documentOptions: {
-        teamId: team2.id,
-      },
+      teamId: testUser1Team.id,
     },
     {
       sender: testUser1,
       recipients: [teamEmail],
       type: DocumentStatus.DRAFT,
-      documentOptions: {
-        teamId: team2.id,
-      },
+      teamId: testUser1Team.id,
     },
   ]);
 
@@ -222,7 +235,7 @@ test('[TEAMS]: check team documents count with external team email', async ({ pa
 });
 
 test('[TEAMS]: resend pending team document', async ({ page }) => {
-  const { team, teamMember2: currentUser } = await seedTeamDocuments();
+  const { team, teamOwner, teamMember2: currentUser } = await seedTeamDocuments();
 
   await apiSignin({
     page,
@@ -230,25 +243,19 @@ test('[TEAMS]: resend pending team document', async ({ page }) => {
     redirectPath: `/t/${team.url}/documents?status=PENDING`,
   });
 
-  await expect(async () => {
-    await page.getByTestId('document-table-action-btn').first().click();
-
-    await page.waitForTimeout(1000);
-
-    await expect(page.getByRole('menuitem', { name: 'Resend' })).toBeVisible();
-  }).toPass();
-
-  await page.getByRole('menuitem').filter({ hasText: 'Resend' }).click();
+  const actionBtn = page.getByTestId('document-table-action-btn').first();
+  await expect(actionBtn).toBeAttached();
+  await openDropdownMenu(page, actionBtn);
+  await expect(page.getByRole('menuitem', { name: 'Resend' })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Resend' }).click();
   await page.getByLabel('test.documenso.com').first().click();
   await page.getByRole('button', { name: 'Send reminder' }).click();
 
-  await expect(
-    page.getByRole('status').filter({ hasText: 'Document re-sent' }).first(),
-  ).toBeVisible();
+  await expectToastTextToBeVisible(page, 'Document re-sent');
 });
 
 test('[TEAMS]: delete draft team document', async ({ page }) => {
-  const { team, teamMember2: teamEmailMember, teamMember3 } = await seedTeamDocuments();
+  const { team, teamOwner, teamMember2: teamEmailMember, teamMember3 } = await seedTeamDocuments();
 
   await apiSignin({
     page,
@@ -256,14 +263,12 @@ test('[TEAMS]: delete draft team document', async ({ page }) => {
     redirectPath: `/t/${team.url}/documents?status=DRAFT`,
   });
 
-  await expect(async () => {
-    await page.getByTestId('document-table-action-btn').first().click();
-
-    await page.waitForTimeout(1000);
-
-    await expect(page.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
-  }).toPass();
-
+  const actionBtn = page.getByTestId('document-table-action-btn').first();
+  await expect(actionBtn).toBeVisible({
+    timeout: 500,
+  });
+  await openDropdownMenu(page, actionBtn);
+  await expect(page.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
   await page.getByRole('menuitem', { name: 'Delete' }).click();
   await page.getByRole('button', { name: 'Delete' }).click();
 
@@ -273,7 +278,7 @@ test('[TEAMS]: delete draft team document', async ({ page }) => {
   await apiSignout({ page });
 
   // Run the test twice, one with the team owner and once with the team member email to ensure the counts are the same.
-  for (const user of [team.owner, teamEmailMember]) {
+  for (const user of [teamOwner, teamEmailMember]) {
     await apiSignin({
       page,
       email: user.email,
@@ -292,7 +297,7 @@ test('[TEAMS]: delete draft team document', async ({ page }) => {
 });
 
 test('[TEAMS]: delete pending team document', async ({ page }) => {
-  const { team, teamMember2: teamEmailMember, teamMember3 } = await seedTeamDocuments();
+  const { team, teamOwner, teamMember2: teamEmailMember, teamMember3 } = await seedTeamDocuments();
 
   await apiSignin({
     page,
@@ -300,17 +305,15 @@ test('[TEAMS]: delete pending team document', async ({ page }) => {
     redirectPath: `/t/${team.url}/documents?status=PENDING`,
   });
 
-  await expect(async () => {
-    await page.getByTestId('document-table-action-btn').first().click();
-
-    await page.waitForTimeout(1000);
-
-    await expect(page.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
-  }).toPass();
-
-  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  const actionBtn = page.getByTestId('document-table-action-btn').first();
+  await expect(actionBtn).toBeVisible({
+    timeout: 500,
+  });
+  await openDropdownMenu(page, actionBtn);
+  await expect(page.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Delete' }).click({ force: true });
   await page.getByPlaceholder("Type 'delete' to confirm").fill('delete');
-  await page.getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('button', { name: 'Delete' }).click({ force: true });
 
   await checkDocumentTabCount(page, 'Pending', 1);
 
@@ -318,7 +321,7 @@ test('[TEAMS]: delete pending team document', async ({ page }) => {
   await apiSignout({ page });
 
   // Run the test twice, one with the team owner and once with the team member email to ensure the counts are the same.
-  for (const user of [team.owner, teamEmailMember]) {
+  for (const user of [teamOwner, teamEmailMember]) {
     await apiSignin({
       page,
       email: user.email,
@@ -337,7 +340,7 @@ test('[TEAMS]: delete pending team document', async ({ page }) => {
 });
 
 test('[TEAMS]: delete completed team document', async ({ page }) => {
-  const { team, teamMember2: teamEmailMember, teamMember3 } = await seedTeamDocuments();
+  const { team, teamOwner, teamMember2: teamEmailMember, teamMember3 } = await seedTeamDocuments();
 
   await apiSignin({
     page,
@@ -345,17 +348,15 @@ test('[TEAMS]: delete completed team document', async ({ page }) => {
     redirectPath: `/t/${team.url}/documents?status=COMPLETED`,
   });
 
-  await expect(async () => {
-    await page.getByTestId('document-table-action-btn').first().click();
-
-    await page.waitForTimeout(1000);
-
-    await expect(page.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
-  }).toPass();
-
-  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  const actionBtn = page.getByTestId('document-table-action-btn').first();
+  await expect(actionBtn).toBeVisible({
+    timeout: 500,
+  });
+  await openDropdownMenu(page, actionBtn);
+  await expect(page.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Delete' }).click({ force: true });
   await page.getByPlaceholder("Type 'delete' to confirm").fill('delete');
-  await page.getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('button', { name: 'Delete' }).click({ force: true });
 
   await checkDocumentTabCount(page, 'Completed', 0);
 
@@ -363,7 +364,7 @@ test('[TEAMS]: delete completed team document', async ({ page }) => {
   await apiSignout({ page });
 
   // Run the test twice, one with the team owner and once with the team member email to ensure the counts are the same.
-  for (const user of [team.owner, teamEmailMember]) {
+  for (const user of [teamOwner, teamEmailMember]) {
     await apiSignin({
       page,
       email: user.email,
@@ -382,7 +383,7 @@ test('[TEAMS]: delete completed team document', async ({ page }) => {
 });
 
 test('[TEAMS]: check document visibility based on team member role', async ({ page }) => {
-  const team = await seedTeam();
+  const { team, owner } = await seedTeam();
 
   // Seed users with different roles
   const adminUser = await seedTeamMember({
@@ -400,46 +401,48 @@ test('[TEAMS]: check document visibility based on team member role', async ({ pa
     role: TeamMemberRole.MEMBER,
   });
 
-  const outsideUser = await seedUser();
+  const { user: outsideUser, team: outsideUserTeam } = await seedUser({
+    isPersonalOrganisation: true,
+  });
 
   // Seed documents with different visibility levels
   await seedDocuments([
     {
-      sender: team.owner,
+      sender: owner,
       recipients: [],
       type: DocumentStatus.COMPLETED,
+      teamId: team.id,
       documentOptions: {
-        teamId: team.id,
         visibility: 'EVERYONE',
         title: 'Document Visible to Everyone',
       },
     },
     {
-      sender: team.owner,
+      sender: owner,
       recipients: [],
       type: DocumentStatus.COMPLETED,
+      teamId: team.id,
       documentOptions: {
-        teamId: team.id,
         visibility: 'MANAGER_AND_ABOVE',
         title: 'Document Visible to Manager and Above',
       },
     },
     {
-      sender: team.owner,
+      sender: owner,
       recipients: [],
       type: DocumentStatus.COMPLETED,
+      teamId: team.id,
       documentOptions: {
-        teamId: team.id,
         visibility: 'ADMIN',
         title: 'Document Visible to Admin',
       },
     },
     {
-      sender: team.owner,
+      sender: owner,
       recipients: [outsideUser],
       type: DocumentStatus.COMPLETED,
+      teamId: team.id,
       documentOptions: {
-        teamId: team.id,
         visibility: 'ADMIN',
         title: 'Document Visible to Admin with Recipient',
       },
@@ -470,11 +473,6 @@ test('[TEAMS]: check document visibility based on team member role', async ({ pa
       path: teamUrlRedirect,
       expectedDocuments: ['Document Visible to Everyone'],
     },
-    {
-      user: outsideUser,
-      path: '/documents',
-      expectedDocuments: ['Document Visible to Admin with Recipient'],
-    },
   ];
 
   for (const testCase of testCases) {
@@ -491,12 +489,20 @@ test('[TEAMS]: check document visibility based on team member role', async ({ pa
 
     await apiSignout({ page });
   }
+
+  await apiSignin({
+    page,
+    email: outsideUser.email,
+    redirectPath: '/inbox',
+  });
+
+  await expectTextToBeVisible(page, 'Document Visible to Admin with Recipient');
 });
 
 test('[TEAMS]: ensure document owner can see document regardless of visibility', async ({
   page,
 }) => {
-  const team = await seedTeam();
+  const { team, owner } = await seedTeam();
 
   // Seed a member user
   const memberUser = await seedTeamMember({
@@ -510,8 +516,8 @@ test('[TEAMS]: ensure document owner can see document regardless of visibility',
       sender: memberUser,
       recipients: [],
       type: DocumentStatus.COMPLETED,
+      teamId: team.id,
       documentOptions: {
-        teamId: team.id,
         visibility: 'ADMIN',
         title: 'Admin Document with Member Document Owner',
       },
@@ -533,7 +539,7 @@ test('[TEAMS]: ensure document owner can see document regardless of visibility',
 });
 
 test('[TEAMS]: ensure recipient can see document regardless of visibility', async ({ page }) => {
-  const team = await seedTeam();
+  const { team, owner } = await seedTeam();
 
   // Seed a member user
   const memberUser = await seedTeamMember({
@@ -544,11 +550,11 @@ test('[TEAMS]: ensure recipient can see document regardless of visibility', asyn
   // Seed a document with ADMIN visibility but make the member user a recipient
   await seedDocuments([
     {
-      sender: team.owner,
+      sender: owner,
       recipients: [memberUser],
       type: DocumentStatus.COMPLETED,
+      teamId: team.id,
       documentOptions: {
-        teamId: team.id,
         visibility: 'ADMIN',
         title: 'Admin Document with Member Recipient',
       },
@@ -570,7 +576,7 @@ test('[TEAMS]: ensure recipient can see document regardless of visibility', asyn
 });
 
 test('[TEAMS]: check that MEMBER role cannot see ADMIN-only documents', async ({ page }) => {
-  const team = await seedTeam();
+  const { team, owner } = await seedTeam();
 
   // Seed a member user
   const memberUser = await seedTeamMember({
@@ -581,11 +587,11 @@ test('[TEAMS]: check that MEMBER role cannot see ADMIN-only documents', async ({
   // Seed an ADMIN-only document
   await seedDocuments([
     {
-      sender: team.owner,
+      sender: owner,
       recipients: [],
       type: DocumentStatus.COMPLETED,
+      teamId: team.id,
       documentOptions: {
-        teamId: team.id,
         visibility: 'ADMIN',
         title: 'Admin Only Document',
       },
@@ -609,7 +615,7 @@ test('[TEAMS]: check that MEMBER role cannot see ADMIN-only documents', async ({
 test('[TEAMS]: check that MEMBER role cannot see MANAGER_AND_ABOVE-only documents', async ({
   page,
 }) => {
-  const team = await seedTeam();
+  const { team, owner } = await seedTeam();
 
   // Seed a member user
   const memberUser = await seedTeamMember({
@@ -620,11 +626,11 @@ test('[TEAMS]: check that MEMBER role cannot see MANAGER_AND_ABOVE-only document
   // Seed an ADMIN-only document
   await seedDocuments([
     {
-      sender: team.owner,
+      sender: owner,
       recipients: [],
       type: DocumentStatus.COMPLETED,
+      teamId: team.id,
       documentOptions: {
-        teamId: team.id,
         visibility: 'MANAGER_AND_ABOVE',
         title: 'Manager and Above Only Document',
       },
@@ -646,7 +652,7 @@ test('[TEAMS]: check that MEMBER role cannot see MANAGER_AND_ABOVE-only document
 });
 
 test('[TEAMS]: check that MANAGER role cannot see ADMIN-only documents', async ({ page }) => {
-  const team = await seedTeam();
+  const { team, owner } = await seedTeam();
 
   // Seed a manager user
   const managerUser = await seedTeamMember({
@@ -657,11 +663,11 @@ test('[TEAMS]: check that MANAGER role cannot see ADMIN-only documents', async (
   // Seed an ADMIN-only document
   await seedDocuments([
     {
-      sender: team.owner,
+      sender: owner,
       recipients: [],
       type: DocumentStatus.COMPLETED,
+      teamId: team.id,
       documentOptions: {
-        teamId: team.id,
         visibility: 'ADMIN',
         title: 'Admin Only Document',
       },
@@ -683,7 +689,7 @@ test('[TEAMS]: check that MANAGER role cannot see ADMIN-only documents', async (
 });
 
 test('[TEAMS]: check that ADMIN role can see MANAGER_AND_ABOVE documents', async ({ page }) => {
-  const team = await seedTeam();
+  const { team, owner } = await seedTeam();
 
   // Seed an admin user
   const adminUser = await seedTeamMember({
@@ -694,11 +700,11 @@ test('[TEAMS]: check that ADMIN role can see MANAGER_AND_ABOVE documents', async
   // Seed a MANAGER_AND_ABOVE document
   await seedDocuments([
     {
-      sender: team.owner,
+      sender: owner,
       recipients: [],
       type: DocumentStatus.COMPLETED,
+      teamId: team.id,
       documentOptions: {
-        teamId: team.id,
         visibility: 'MANAGER_AND_ABOVE',
         title: 'Manager and Above Document',
       },
@@ -720,25 +726,16 @@ test('[TEAMS]: check that ADMIN role can see MANAGER_AND_ABOVE documents', async
 });
 
 test('[TEAMS]: check that ADMIN role can change document visibility', async ({ page }) => {
-  const team = await seedTeam({
-    createTeamOptions: {
-      teamGlobalSettings: {
-        create: {
-          documentVisibility: DocumentVisibility.MANAGER_AND_ABOVE,
-        },
-      },
-    },
-  });
+  const { team, owner } = await seedTeam();
 
   const adminUser = await seedTeamMember({
     teamId: team.id,
     role: TeamMemberRole.ADMIN,
   });
 
-  const document = await seedBlankDocument(adminUser, {
+  const document = await seedBlankDocument(adminUser, team.id, {
     createDocumentOptions: {
-      teamId: team.id,
-      visibility: team.teamGlobalSettings?.documentVisibility,
+      visibility: DocumentVisibility.MANAGER_AND_ABOVE,
     },
   });
 
@@ -763,25 +760,16 @@ test('[TEAMS]: check that ADMIN role can change document visibility', async ({ p
 test('[TEAMS]: check that MEMBER role cannot change visibility of EVERYONE documents', async ({
   page,
 }) => {
-  const team = await seedTeam({
-    createTeamOptions: {
-      teamGlobalSettings: {
-        create: {
-          documentVisibility: DocumentVisibility.EVERYONE,
-        },
-      },
-    },
-  });
+  const { team, owner } = await seedTeam();
 
   const teamMember = await seedTeamMember({
     teamId: team.id,
     role: TeamMemberRole.MEMBER,
   });
 
-  const document = await seedBlankDocument(teamMember, {
+  const document = await seedBlankDocument(teamMember, team.id, {
     createDocumentOptions: {
-      teamId: team.id,
-      visibility: team.teamGlobalSettings?.documentVisibility,
+      visibility: DocumentVisibility.EVERYONE,
     },
   });
 
@@ -798,25 +786,16 @@ test('[TEAMS]: check that MEMBER role cannot change visibility of EVERYONE docum
 test('[TEAMS]: check that MEMBER role cannot change visibility of MANAGER_AND_ABOVE documents', async ({
   page,
 }) => {
-  const team = await seedTeam({
-    createTeamOptions: {
-      teamGlobalSettings: {
-        create: {
-          documentVisibility: DocumentVisibility.MANAGER_AND_ABOVE,
-        },
-      },
-    },
-  });
+  const { team, owner } = await seedTeam();
 
   const teamMember = await seedTeamMember({
     teamId: team.id,
     role: TeamMemberRole.MEMBER,
   });
 
-  const document = await seedBlankDocument(teamMember, {
+  const document = await seedBlankDocument(teamMember, team.id, {
     createDocumentOptions: {
-      teamId: team.id,
-      visibility: team.teamGlobalSettings?.documentVisibility,
+      visibility: DocumentVisibility.MANAGER_AND_ABOVE,
     },
   });
 
@@ -833,25 +812,16 @@ test('[TEAMS]: check that MEMBER role cannot change visibility of MANAGER_AND_AB
 test('[TEAMS]: check that MEMBER role cannot change visibility of ADMIN documents', async ({
   page,
 }) => {
-  const team = await seedTeam({
-    createTeamOptions: {
-      teamGlobalSettings: {
-        create: {
-          documentVisibility: DocumentVisibility.ADMIN,
-        },
-      },
-    },
-  });
+  const { team, owner } = await seedTeam();
 
   const teamMember = await seedTeamMember({
     teamId: team.id,
     role: TeamMemberRole.MEMBER,
   });
 
-  const document = await seedBlankDocument(teamMember, {
+  const document = await seedBlankDocument(teamMember, team.id, {
     createDocumentOptions: {
-      teamId: team.id,
-      visibility: team.teamGlobalSettings?.documentVisibility,
+      visibility: DocumentVisibility.ADMIN,
     },
   });
 
@@ -868,25 +838,16 @@ test('[TEAMS]: check that MEMBER role cannot change visibility of ADMIN document
 test('[TEAMS]: check that MANAGER role cannot change visibility of ADMIN documents', async ({
   page,
 }) => {
-  const team = await seedTeam({
-    createTeamOptions: {
-      teamGlobalSettings: {
-        create: {
-          documentVisibility: DocumentVisibility.ADMIN,
-        },
-      },
-    },
-  });
+  const { team, owner } = await seedTeam();
 
   const teamManager = await seedTeamMember({
     teamId: team.id,
     role: TeamMemberRole.MANAGER,
   });
 
-  const document = await seedBlankDocument(teamManager, {
+  const document = await seedBlankDocument(teamManager, team.id, {
     createDocumentOptions: {
-      teamId: team.id,
-      visibility: team.teamGlobalSettings?.documentVisibility,
+      visibility: DocumentVisibility.ADMIN,
     },
   });
 
@@ -902,17 +863,25 @@ test('[TEAMS]: check that MANAGER role cannot change visibility of ADMIN documen
 
 test('[TEAMS]: users cannot see documents from other teams', async ({ page }) => {
   // Seed two teams with documents
-  const { team: teamA, teamMember2: teamAMember } = await seedTeamDocuments();
-  const { team: teamB, teamMember2: teamBMember } = await seedTeamDocuments();
+  const {
+    team: teamA,
+    teamOwner: teamAOwner,
+    teamMember2: teamAMember,
+  } = await seedTeamDocuments();
+  const {
+    team: teamB,
+    teamOwner: teamBOwner,
+    teamMember2: teamBMember,
+  } = await seedTeamDocuments();
 
   // Seed a document in team B
   await seedDocuments([
     {
-      sender: teamB.owner,
+      sender: teamBOwner,
       recipients: [],
       type: DocumentStatus.COMPLETED,
+      teamId: teamB.id,
       documentOptions: {
-        teamId: teamB.id,
         visibility: 'EVERYONE',
         title: 'Team B Document',
       },
@@ -934,8 +903,8 @@ test('[TEAMS]: users cannot see documents from other teams', async ({ page }) =>
 
 test('[TEAMS]: personal documents are not visible in team context', async ({ page }) => {
   // Seed a team and a user with personal documents
-  const { team, teamMember2 } = await seedTeamDocuments();
-  const personalUser = await seedUser();
+  const { team, teamOwner, teamMember2 } = await seedTeamDocuments();
+  const { user: personalUser, team: personalUserTeam } = await seedUser();
 
   // Seed a personal document for teamMember2
   await seedDocuments([
@@ -943,8 +912,8 @@ test('[TEAMS]: personal documents are not visible in team context', async ({ pag
       sender: teamMember2,
       recipients: [],
       type: DocumentStatus.COMPLETED,
+      teamId: personalUserTeam.id,
       documentOptions: {
-        teamId: null, // Indicates a personal document
         visibility: 'EVERYONE',
         title: 'Personal Document',
       },
@@ -962,37 +931,6 @@ test('[TEAMS]: personal documents are not visible in team context', async ({ pag
   await expect(
     page.getByRole('link', { name: 'Personal Document', exact: true }),
   ).not.toBeVisible();
-
-  await apiSignout({ page });
-});
-
-test('[PERSONAL]: team documents are not visible in personal account', async ({ page }) => {
-  // Seed a team and a user with personal documents
-  const { team, teamMember2 } = await seedTeamDocuments();
-
-  // Seed a team document
-  await seedDocuments([
-    {
-      sender: teamMember2,
-      recipients: [],
-      type: DocumentStatus.COMPLETED,
-      documentOptions: {
-        teamId: team.id,
-        visibility: 'EVERYONE',
-        title: 'Team Document',
-      },
-    },
-  ]);
-
-  // Sign in as teamMember2 in the personal context
-  await apiSignin({
-    page,
-    email: teamMember2.email,
-    redirectPath: `/documents?status=COMPLETED`,
-  });
-
-  // Verify that the team document is not visible in the personal context
-  await expect(page.getByRole('link', { name: 'Team Document', exact: true })).not.toBeVisible();
 
   await apiSignout({ page });
 });

@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { EnvelopeType, Prisma } from '@prisma/client';
 
 import { prisma } from '@documenso/prisma';
 
@@ -34,13 +34,20 @@ export const findUsers = async ({
 
   const [users, count] = await Promise.all([
     prisma.user.findMany({
-      include: {
-        subscriptions: true,
-        documents: {
+      select: {
+        _count: {
           select: {
-            id: true,
+            envelopes: {
+              where: {
+                type: EnvelopeType.DOCUMENT,
+              },
+            },
           },
         },
+        id: true,
+        name: true,
+        email: true,
+        roles: true,
       },
       where: whereClause,
       skip: Math.max(page - 1, 0) * perPage,
@@ -52,7 +59,10 @@ export const findUsers = async ({
   ]);
 
   return {
-    users,
+    users: users.map((user) => ({
+      ...user,
+      documentCount: user._count.envelopes,
+    })),
     totalPages: Math.ceil(count / perPage),
   };
 };

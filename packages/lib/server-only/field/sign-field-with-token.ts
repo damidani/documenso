@@ -1,5 +1,6 @@
 import { DocumentStatus, FieldType, RecipientRole, SigningStatus } from '@prisma/client';
 import { DateTime } from 'luxon';
+import { isDeepEqual } from 'remeda';
 import { match } from 'ts-pattern';
 
 import { validateCheckboxField } from '@documenso/lib/advanced-fields-validation/validate-checkbox';
@@ -10,6 +11,7 @@ import { validateTextField } from '@documenso/lib/advanced-fields-validation/val
 import { fromCheckboxValue } from '@documenso/lib/universal/field-checkbox';
 import { prisma } from '@documenso/prisma';
 
+import { AUTO_SIGNABLE_FIELD_TYPES } from '../../constants/autosign';
 import { DEFAULT_DOCUMENT_DATE_FORMAT } from '../../constants/date-formats';
 import { DEFAULT_DOCUMENT_TIME_ZONE } from '../../constants/time-zones';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../../types/document-audit-logs';
@@ -23,6 +25,7 @@ import {
 } from '../../types/field-meta';
 import type { RequestMetadata } from '../../universal/extract-request-metadata';
 import { createDocumentAuditLogData } from '../../utils/document-audit-logs';
+import { assertRecipientNotExpired } from '../../utils/recipients';
 import { validateFieldAuth } from '../document/validate-field-auth';
 
 export type SignFieldWithTokenOptions = {
@@ -79,7 +82,7 @@ export const signFieldWithToken = async ({
       },
     },
     include: {
-      document: {
+      envelope: {
         include: {
           recipients: true,
         },
@@ -88,9 +91,9 @@ export const signFieldWithToken = async ({
     },
   });
 
-  const { document } = field;
+  const { envelope } = field;
 
-  if (!document) {
+  if (!envelope) {
     throw new Error(`Document not found for field ${field.id}`);
   }
 
@@ -98,13 +101,15 @@ export const signFieldWithToken = async ({
     throw new Error(`Recipient not found for field ${field.id}`);
   }
 
-  if (document.deletedAt) {
-    throw new Error(`Document ${document.id} has been deleted`);
+  if (envelope.deletedAt) {
+    throw new Error(`Document ${envelope.id} has been deleted`);
   }
 
-  if (document.status !== DocumentStatus.PENDING) {
-    throw new Error(`Document ${document.id} must be pending for signing`);
+  if (envelope.status !== DocumentStatus.PENDING) {
+    throw new Error(`Document ${envelope.id} must be pending for signing`);
   }
+
+  assertRecipientNotExpired(recipient);
 
   if (
     recipient.signingStatus === SigningStatus.SIGNED ||
@@ -170,7 +175,7 @@ export const signFieldWithToken = async ({
   }
 
   const derivedRecipientActionAuth = await validateFieldAuth({
-    documentAuthOptions: document.authOptions,
+    documentAuthOptions: envelope.authOptions,
     recipient,
     field,
     userId,
@@ -179,7 +184,9 @@ export const signFieldWithToken = async ({
 
   const documentMeta = await prisma.documentMeta.findFirst({
     where: {
-      documentId: document.id,
+      envelope: {
+        id: envelope.id,
+      },
     },
   });
 
@@ -203,6 +210,29 @@ export const signFieldWithToken = async ({
 
   if (isSignatureField && documentMeta?.typedSignatureEnabled === false && typedSignature) {
     throw new Error('Typed signatures are not allowed. Please draw your signature');
+  }
+
+  if (field.fieldMeta?.readOnly && !AUTO_SIGNABLE_FIELD_TYPES.includes(field.type)) {
+    // !: This is a bit of a hack at the moment, readonly fields with default values
+    // !: should be inserted with their default value on document creation instead of
+    // !: this weird programattic approach. Until that's fixed though this will verify
+    // !: that the programmatic signed value is only that of its default.
+    const isAutomaticSigningValueValid = match(field.fieldMeta)
+      .with({ type: 'text' }, (meta) => customText === meta.text)
+      .with({ type: 'number' }, (meta) => customText === meta.value)
+      .with({ type: 'checkbox' }, (meta) =>
+        isDeepEqual(
+          fromCheckboxValue(customText ?? ''),
+          meta.values?.filter((v) => v.checked).map((v) => v.value) ?? [],
+        ),
+      )
+      .with({ type: 'radio' }, (meta) => customText === meta.values?.find((v) => v.checked)?.value)
+      .with({ type: 'dropdown' }, (meta) => customText === meta.defaultValue)
+      .otherwise(() => false);
+
+    if (!isAutomaticSigningValueValid) {
+      throw new Error('Field is read only and only accepts its default value for signing.');
+    }
   }
 
   const assistant = recipient.role === RecipientRole.ASSISTANT ? recipient : undefined;
@@ -247,7 +277,7 @@ export const signFieldWithToken = async ({
           assistant && field.recipientId !== assistant.id
             ? DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_PREFILLED
             : DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED,
-        documentId: document.id,
+        envelopeId: envelope.id,
         user: {
           email: assistant?.email ?? recipient.email,
           name: assistant?.name ?? recipient.name,

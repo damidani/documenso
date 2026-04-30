@@ -7,6 +7,7 @@ import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { extractRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
 
 import { setCsrfCookie } from './lib/session/session-cookies';
+import { accountRoute } from './routes/account';
 import { callbackRoute } from './routes/callback';
 import { emailPasswordRoute } from './routes/email-password';
 import { oauthRoute } from './routes/oauth';
@@ -43,6 +44,7 @@ export const auth = new Hono<HonoAuthContext>()
   })
   .route('/', sessionRoute)
   .route('/', signOutRoute)
+  .route('/', accountRoute)
   .route('/callback', callbackRoute)
   .route('/oauth', oauthRoute)
   .route('/email-password', emailPasswordRoute)
@@ -79,6 +81,7 @@ auth.onError((err, c) => {
   }
 
   // Handle other errors
+  console.error('Unknown Error:', err);
   return c.json(
     {
       code: AppErrorCode.UNKNOWN_ERROR,

@@ -9,22 +9,28 @@ export enum AppErrorCode {
   'EXPIRED_CODE' = 'EXPIRED_CODE',
   'INVALID_BODY' = 'INVALID_BODY',
   'INVALID_REQUEST' = 'INVALID_REQUEST',
+  'RECIPIENT_EXPIRED' = 'RECIPIENT_EXPIRED',
   'LIMIT_EXCEEDED' = 'LIMIT_EXCEEDED',
   'NOT_FOUND' = 'NOT_FOUND',
   'NOT_SETUP' = 'NOT_SETUP',
+  'INVALID_CAPTCHA' = 'INVALID_CAPTCHA',
   'UNAUTHORIZED' = 'UNAUTHORIZED',
   'UNKNOWN_ERROR' = 'UNKNOWN_ERROR',
   'RETRY_EXCEPTION' = 'RETRY_EXCEPTION',
   'SCHEMA_FAILED' = 'SCHEMA_FAILED',
   'TOO_MANY_REQUESTS' = 'TOO_MANY_REQUESTS',
+  'TWO_FACTOR_AUTH_FAILED' = 'TWO_FACTOR_AUTH_FAILED',
+  'WEBHOOK_INVALID_REQUEST' = 'WEBHOOK_INVALID_REQUEST',
 }
 
 export const genericErrorCodeToTrpcErrorCodeMap: Record<string, { code: string; status: number }> =
   {
     [AppErrorCode.ALREADY_EXISTS]: { code: 'BAD_REQUEST', status: 400 },
+    [AppErrorCode.RECIPIENT_EXPIRED]: { code: 'BAD_REQUEST', status: 400 },
     [AppErrorCode.EXPIRED_CODE]: { code: 'BAD_REQUEST', status: 400 },
     [AppErrorCode.INVALID_BODY]: { code: 'BAD_REQUEST', status: 400 },
     [AppErrorCode.INVALID_REQUEST]: { code: 'BAD_REQUEST', status: 400 },
+    [AppErrorCode.INVALID_CAPTCHA]: { code: 'BAD_REQUEST', status: 400 },
     [AppErrorCode.NOT_FOUND]: { code: 'NOT_FOUND', status: 404 },
     [AppErrorCode.NOT_SETUP]: { code: 'BAD_REQUEST', status: 400 },
     [AppErrorCode.UNAUTHORIZED]: { code: 'UNAUTHORIZED', status: 401 },
@@ -32,6 +38,7 @@ export const genericErrorCodeToTrpcErrorCodeMap: Record<string, { code: string; 
     [AppErrorCode.RETRY_EXCEPTION]: { code: 'INTERNAL_SERVER_ERROR', status: 500 },
     [AppErrorCode.SCHEMA_FAILED]: { code: 'INTERNAL_SERVER_ERROR', status: 500 },
     [AppErrorCode.TOO_MANY_REQUESTS]: { code: 'TOO_MANY_REQUESTS', status: 429 },
+    [AppErrorCode.TWO_FACTOR_AUTH_FAILED]: { code: 'UNAUTHORIZED', status: 401 },
   };
 
 export const ZAppErrorJsonSchema = z.object({
@@ -60,6 +67,11 @@ type AppErrorOptions = {
    * Mainly used for API -> Frontend communication and logging filtering.
    */
   statusCode?: number;
+
+  /**
+   * Optional headers to include when this error is returned in an API response.
+   */
+  headers?: Record<string, string>;
 };
 
 export class AppError extends Error {
@@ -78,6 +90,8 @@ export class AppError extends Error {
    */
   statusCode?: number;
 
+  headers?: Record<string, string>;
+
   name = 'AppError';
 
   /**
@@ -93,6 +107,7 @@ export class AppError extends Error {
     this.code = errorCode;
     this.userMessage = options?.userMessage;
     this.statusCode = options?.statusCode;
+    this.headers = options?.headers;
   }
 
   /**

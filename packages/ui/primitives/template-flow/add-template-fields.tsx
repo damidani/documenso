@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { zodResolver } from '@hookform/resolvers/zod';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import type { Field, Recipient } from '@prisma/client';
+import type { Field } from '@prisma/client';
 import { FieldType, RecipientRole, SendStatus } from '@prisma/client';
 import {
   CalendarDays,
@@ -21,14 +22,18 @@ import { useFieldArray, useForm } from 'react-hook-form';
 import { useHotkeys } from 'react-hotkeys-hook';
 
 import { getBoundingClientRect } from '@documenso/lib/client-only/get-bounding-client-rect';
+import { useAutoSave } from '@documenso/lib/client-only/hooks/use-autosave';
 import { useDocumentElement } from '@documenso/lib/client-only/hooks/use-document-element';
-import { PDF_VIEWER_PAGE_SELECTOR } from '@documenso/lib/constants/pdf-viewer';
+import { PDF_VIEWER_PAGE_SELECTOR, getPdfPagesCount } from '@documenso/lib/constants/pdf-viewer';
 import { RECIPIENT_ROLES_DESCRIPTION } from '@documenso/lib/constants/recipient-roles';
+import { isTemplateRecipientEmailPlaceholder } from '@documenso/lib/constants/template';
 import {
   type TFieldMetaSchema as FieldMeta,
   ZFieldMetaSchema,
 } from '@documenso/lib/types/field-meta';
+import type { TRecipientLite } from '@documenso/lib/types/recipient';
 import { nanoid } from '@documenso/lib/universal/id';
+import { ADVANCED_FIELD_TYPES_WITH_OPTIONAL_SETTING } from '@documenso/lib/utils/advanced-fields-helpers';
 import { parseMessageDescriptor } from '@documenso/lib/utils/i18n';
 import { cn } from '@documenso/ui/lib/utils';
 import { Button } from '@documenso/ui/primitives/button';
@@ -53,12 +58,15 @@ import { FRIENDLY_FIELD_TYPE } from '@documenso/ui/primitives/document-flow/type
 import { Popover, PopoverContent, PopoverTrigger } from '@documenso/ui/primitives/popover';
 import { useToast } from '@documenso/ui/primitives/use-toast';
 
-import { getRecipientColorStyles, useRecipientColors } from '../../lib/recipient-colors';
+import { getRecipientColorStyles } from '../../lib/recipient-colors';
 import type { FieldFormType } from '../document-flow/add-fields';
 import { FieldAdvancedSettings } from '../document-flow/field-item-advanced-settings';
 import { Form } from '../form/form';
 import { useStep } from '../stepper';
-import type { TAddTemplateFieldsFormSchema } from './add-template-fields.types';
+import {
+  type TAddTemplateFieldsFormSchema,
+  ZAddTemplateFieldsFormSchema,
+} from './add-template-fields.types';
 
 const MIN_HEIGHT_PX = 12;
 const MIN_WIDTH_PX = 36;
@@ -68,10 +76,11 @@ const DEFAULT_WIDTH_PX = MIN_WIDTH_PX * 2.5;
 
 export type AddTemplateFieldsFormProps = {
   documentFlow: DocumentFlowStep;
-  recipients: Recipient[];
+  recipients: TRecipientLite[];
   fields: Field[];
   onSubmit: (_data: TAddTemplateFieldsFormSchema) => void;
-  teamId?: number;
+  onAutoSave: (_data: TAddTemplateFieldsFormSchema) => Promise<void>;
+  teamId: number;
 };
 
 export const AddTemplateFieldsFormPartial = ({
@@ -79,6 +88,7 @@ export const AddTemplateFieldsFormPartial = ({
   recipients,
   fields,
   onSubmit,
+  onAutoSave,
   teamId,
 }: AddTemplateFieldsFormProps) => {
   const { _ } = useLingui();
@@ -100,14 +110,14 @@ export const AddTemplateFieldsFormPartial = ({
     defaultValues: {
       fields: fields.map((field) => ({
         nativeId: field.id,
-        formId: `${field.id}-${field.templateId}`,
+        formId: `${field.id}-${field.envelopeItemId}`,
         pageNumber: field.page,
         type: field.type,
         pageX: Number(field.positionX),
         pageY: Number(field.positionY),
         pageWidth: Number(field.width),
         pageHeight: Number(field.height),
-        signerId: field.recipientId ?? -1,
+        recipientId: field.recipientId ?? -1,
         signerEmail:
           recipients.find((recipient) => recipient.id === field.recipientId)?.email ?? '',
         signerToken:
@@ -115,9 +125,24 @@ export const AddTemplateFieldsFormPartial = ({
         fieldMeta: field.fieldMeta ? ZFieldMetaSchema.parse(field.fieldMeta) : undefined,
       })),
     },
+    resolver: zodResolver(ZAddTemplateFieldsFormSchema),
   });
 
   const onFormSubmit = form.handleSubmit(onSubmit);
+
+  const { scheduleSave } = useAutoSave(onAutoSave);
+
+  const handleAutoSave = async () => {
+    const isFormValid = await form.trigger();
+
+    if (!isFormValid) {
+      return;
+    }
+
+    const formData = form.getValues();
+
+    scheduleSave(formData);
+  };
 
   const {
     append,
@@ -130,13 +155,11 @@ export const AddTemplateFieldsFormPartial = ({
   });
 
   const [selectedField, setSelectedField] = useState<FieldType | null>(null);
-  const [selectedSigner, setSelectedSigner] = useState<Recipient | null>(null);
+  const [selectedSigner, setSelectedSigner] = useState<TRecipientLite | null>(null);
   const [showRecipientsSelector, setShowRecipientsSelector] = useState(false);
 
   const selectedSignerIndex = recipients.findIndex((r) => r.id === selectedSigner?.id);
-  const selectedSignerStyles = useRecipientColors(
-    selectedSignerIndex === -1 ? 0 : selectedSignerIndex,
-  );
+  const selectedSignerStyles = getRecipientColorStyles(selectedSignerIndex);
 
   const onFieldCopy = useCallback(
     (event?: KeyboardEvent | null, options?: { duplicate?: boolean; duplicateAll?: boolean }) => {
@@ -151,25 +174,28 @@ export const AddTemplateFieldsFormPartial = ({
             nativeId: undefined,
             formId: nanoid(12),
             signerEmail: selectedSigner?.email ?? lastActiveField.signerEmail,
-            signerId: selectedSigner?.id ?? lastActiveField.signerId,
+            recipientId: selectedSigner?.id ?? lastActiveField.recipientId,
             signerToken: selectedSigner?.token ?? lastActiveField.signerToken,
             pageX: lastActiveField.pageX + 3,
             pageY: lastActiveField.pageY + 3,
           };
 
           append(newField);
+          void handleAutoSave();
 
           return;
         }
 
         if (duplicateAll) {
-          const pages = Array.from(document.querySelectorAll(PDF_VIEWER_PAGE_SELECTOR));
+          const totalPages = getPdfPagesCount();
 
-          pages.forEach((_, index) => {
-            const pageNumber = index + 1;
+          if (totalPages < 1) {
+            return;
+          }
 
+          for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
             if (pageNumber === lastActiveField.pageNumber) {
-              return;
+              continue;
             }
 
             const newField: TAddTemplateFieldsFormSchema['fields'][0] = {
@@ -177,26 +203,35 @@ export const AddTemplateFieldsFormPartial = ({
               nativeId: undefined,
               formId: nanoid(12),
               signerEmail: selectedSigner?.email ?? lastActiveField.signerEmail,
-              signerId: selectedSigner?.id ?? lastActiveField.signerId,
+              recipientId: selectedSigner?.id ?? lastActiveField.recipientId,
               signerToken: selectedSigner?.token ?? lastActiveField.signerToken,
               pageNumber,
             };
 
             append(newField);
-          });
+          }
 
+          void handleAutoSave();
           return;
         }
 
         setFieldClipboard(lastActiveField);
 
         toast({
-          title: 'Copied field',
-          description: 'Copied field to clipboard',
+          title: _(msg`Copied field`),
+          description: _(msg`Copied field to clipboard`),
         });
       }
     },
-    [append, lastActiveField, selectedSigner?.email, selectedSigner?.id, toast],
+    [
+      append,
+      lastActiveField,
+      selectedSigner?.email,
+      selectedSigner?.id,
+      selectedSigner?.token,
+      toast,
+      handleAutoSave,
+    ],
   );
 
   const onFieldPaste = useCallback(
@@ -209,15 +244,25 @@ export const AddTemplateFieldsFormPartial = ({
         append({
           ...copiedField,
           formId: nanoid(12),
+          nativeId: undefined,
           signerEmail: selectedSigner?.email ?? copiedField.signerEmail,
-          signerId: selectedSigner?.id ?? copiedField.signerId,
+          recipientId: selectedSigner?.id ?? copiedField.recipientId,
           signerToken: selectedSigner?.token ?? copiedField.signerToken,
           pageX: copiedField.pageX + 3,
           pageY: copiedField.pageY + 3,
         });
+
+        void handleAutoSave();
       }
     },
-    [append, fieldClipboard, selectedSigner?.email, selectedSigner?.id, selectedSigner?.token],
+    [
+      append,
+      fieldClipboard,
+      selectedSigner?.email,
+      selectedSigner?.id,
+      selectedSigner?.token,
+      handleAutoSave,
+    ],
   );
 
   useHotkeys(['ctrl+c', 'meta+c'], (evt) => onFieldCopy(evt));
@@ -323,7 +368,7 @@ export const AddTemplateFieldsFormPartial = ({
       pageX -= fieldPageWidth / 2;
       pageY -= fieldPageHeight / 2;
 
-      append({
+      const field = {
         formId: nanoid(12),
         type: selectedField,
         pageNumber,
@@ -332,10 +377,16 @@ export const AddTemplateFieldsFormPartial = ({
         pageWidth: fieldPageWidth,
         pageHeight: fieldPageHeight,
         signerEmail: selectedSigner.email,
-        signerId: selectedSigner.id,
+        recipientId: selectedSigner.id,
         signerToken: selectedSigner.token ?? '',
         fieldMeta: undefined,
-      });
+      };
+
+      append(field);
+      if (ADVANCED_FIELD_TYPES_WITH_OPTIONAL_SETTING.includes(selectedField)) {
+        setCurrentField(field);
+        setShowAdvancedSettings(true);
+      }
 
       setIsFieldWithinBounds(false);
       setSelectedField(null);
@@ -369,8 +420,10 @@ export const AddTemplateFieldsFormPartial = ({
         pageWidth,
         pageHeight,
       });
+
+      void handleAutoSave();
     },
-    [getFieldPosition, localFields, update],
+    [getFieldPosition, localFields, update, handleAutoSave],
   );
 
   const onFieldMove = useCallback(
@@ -392,8 +445,10 @@ export const AddTemplateFieldsFormPartial = ({
         pageX,
         pageY,
       });
+
+      void handleAutoSave();
     },
-    [getFieldPosition, localFields, update],
+    [getFieldPosition, localFields, update, handleAutoSave],
   );
 
   useEffect(() => {
@@ -437,7 +492,7 @@ export const AddTemplateFieldsFormPartial = ({
   }, [recipients]);
 
   const recipientsByRole = useMemo(() => {
-    const recipientsByRole: Record<RecipientRole, Recipient[]> = {
+    const recipientsByRole: Record<RecipientRole, TRecipientLite[]> = {
       CC: [],
       VIEWER: [],
       SIGNER: [],
@@ -466,7 +521,7 @@ export const AddTemplateFieldsFormPartial = ({
 
   const recipientsByRoleToDisplay = useMemo(() => {
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    return (Object.entries(recipientsByRole) as [RecipientRole, Recipient[]][]).filter(
+    return (Object.entries(recipientsByRole) as [RecipientRole, TRecipientLite[]][]).filter(
       ([role]) =>
         role !== RecipientRole.CC &&
         role !== RecipientRole.VIEWER &&
@@ -495,6 +550,7 @@ export const AddTemplateFieldsFormPartial = ({
     });
 
     form.setValue('fields', updatedFields);
+    void handleAutoSave();
   };
 
   return (
@@ -510,7 +566,10 @@ export const AddTemplateFieldsFormPartial = ({
           fields={localFields}
           onAdvancedSettings={handleAdvancedSettings}
           onSave={handleSavedFieldSettings}
-          teamId={teamId}
+          onAutoSave={async (fieldState) => {
+            handleSavedFieldSettings(fieldState);
+            await handleAutoSave();
+          }}
         />
       ) : (
         <>
@@ -523,7 +582,7 @@ export const AddTemplateFieldsFormPartial = ({
               {selectedField && (
                 <div
                   className={cn(
-                    'text-muted-foreground dark:text-muted-background pointer-events-none fixed z-50 flex cursor-pointer flex-col items-center justify-center rounded-[2px] bg-white ring-2 transition duration-200 [container-type:size]',
+                    'dark:text-muted-background pointer-events-none fixed z-50 flex cursor-pointer flex-col items-center justify-center rounded-[2px] bg-white text-muted-foreground ring-2 transition duration-200 [container-type:size]',
                     selectedSignerStyles?.base,
                     {
                       '-rotate-6 scale-90 opacity-50 dark:bg-black/20': !isFieldWithinBounds,
@@ -544,26 +603,36 @@ export const AddTemplateFieldsFormPartial = ({
               )}
 
               {localFields.map((field, index) => {
-                const recipientIndex = recipients.findIndex((r) => r.email === field.signerEmail);
+                const recipientIndex = recipients.findIndex((r) => r.id === field.recipientId);
 
                 return (
                   <FieldItem
                     key={index}
                     recipientIndex={recipientIndex === -1 ? 0 : recipientIndex}
                     field={field}
-                    disabled={selectedSigner?.email !== field.signerEmail}
+                    disabled={selectedSigner?.id !== field.recipientId}
                     minHeight={MIN_HEIGHT_PX}
                     minWidth={MIN_WIDTH_PX}
                     defaultHeight={DEFAULT_HEIGHT_PX}
                     defaultWidth={DEFAULT_WIDTH_PX}
                     passive={isFieldWithinBounds && !!selectedField}
                     onFocus={() => setLastActiveField(field)}
-                    onBlur={() => setLastActiveField(null)}
+                    onBlur={() => {
+                      setLastActiveField(null);
+                      void handleAutoSave();
+                    }}
                     onResize={(options) => onFieldResize(options, index)}
                     onMove={(options) => onFieldMove(options, index)}
-                    onRemove={() => remove(index)}
-                    onDuplicate={() => onFieldCopy(null, { duplicate: true })}
-                    onDuplicateAllPages={() => onFieldCopy(null, { duplicateAll: true })}
+                    onRemove={() => {
+                      remove(index);
+                      void handleAutoSave();
+                    }}
+                    onDuplicate={() => {
+                      onFieldCopy(null, { duplicate: true });
+                    }}
+                    onDuplicateAllPages={() => {
+                      onFieldCopy(null, { duplicateAll: true });
+                    }}
                     onAdvancedSettings={() => {
                       setCurrentField(field);
                       handleAdvancedSettings();
@@ -582,19 +651,25 @@ export const AddTemplateFieldsFormPartial = ({
                     variant="outline"
                     role="combobox"
                     className={cn(
-                      'bg-background text-muted-foreground hover:text-foreground mb-12 mt-2 justify-between font-normal',
-                      selectedSignerStyles?.comboxBoxTrigger,
+                      'mb-12 mt-2 justify-between bg-background font-normal text-muted-foreground hover:text-foreground',
+                      selectedSignerStyles?.comboBoxTrigger,
                     )}
                   >
-                    {selectedSigner?.email && (
-                      <span className="flex-1 truncate text-left">
-                        {selectedSigner?.name} ({selectedSigner?.email})
-                      </span>
-                    )}
+                    {selectedSigner?.email &&
+                      !isTemplateRecipientEmailPlaceholder(selectedSigner.email) && (
+                        <span className="flex-1 truncate text-left">
+                          {selectedSigner?.name} ({selectedSigner?.email})
+                        </span>
+                      )}
+
+                    {selectedSigner?.email &&
+                      isTemplateRecipientEmailPlaceholder(selectedSigner.email) && (
+                        <span className="flex-1 truncate text-left">{selectedSigner?.name}</span>
+                      )}
 
                     {!selectedSigner?.email && (
                       <span className="gradie flex-1 truncate text-left">
-                        {selectedSigner?.email}
+                        No recipient selected
                       </span>
                     )}
 
@@ -607,7 +682,7 @@ export const AddTemplateFieldsFormPartial = ({
                     <CommandInput />
 
                     <CommandEmpty>
-                      <span className="text-muted-foreground inline-block px-4">
+                      <span className="inline-block px-4 text-muted-foreground">
                         <Trans>No recipient matching this description was found.</Trans>
                       </span>
                     </CommandEmpty>
@@ -615,14 +690,14 @@ export const AddTemplateFieldsFormPartial = ({
                     {/* Note: This is duplicated in `add-fields.tsx` */}
                     {recipientsByRoleToDisplay.map(([role, roleRecipients], roleIndex) => (
                       <CommandGroup key={roleIndex}>
-                        <div className="text-muted-foreground mb-1 ml-2 mt-2 text-xs font-medium">
+                        <div className="mb-1 ml-2 mt-2 text-xs font-medium text-muted-foreground">
                           {_(RECIPIENT_ROLES_DESCRIPTION[role].roleNamePlural)}
                         </div>
 
                         {roleRecipients.length === 0 && (
                           <div
                             key={`${role}-empty`}
-                            className="text-muted-foreground/80 px-4 pb-4 pt-2.5 text-center text-xs"
+                            className="px-4 pb-4 pt-2.5 text-center text-xs text-muted-foreground/80"
                           >
                             <Trans>No recipients with this role</Trans>
                           </div>
@@ -634,11 +709,8 @@ export const AddTemplateFieldsFormPartial = ({
                             className={cn(
                               'px-2 last:mb-1 [&:not(:first-child)]:mt-1',
                               getRecipientColorStyles(
-                                Math.max(
-                                  recipients.findIndex((r) => r.id === recipient.id),
-                                  0,
-                                ),
-                              )?.comboxBoxItem,
+                                recipients.findIndex((r) => r.id === recipient.id),
+                              )?.comboBoxItem,
                             )}
                             onSelect={() => {
                               setSelectedSigner(recipient);
@@ -646,19 +718,26 @@ export const AddTemplateFieldsFormPartial = ({
                             }}
                           >
                             <span
-                              className={cn('text-foreground/70 truncate', {
+                              className={cn('truncate text-foreground/70', {
                                 'text-foreground/80': recipient === selectedSigner,
                               })}
                             >
-                              {recipient.name && (
-                                <span title={`${recipient.name} (${recipient.email})`}>
-                                  {recipient.name} ({recipient.email})
-                                </span>
-                              )}
+                              {recipient.name &&
+                                !isTemplateRecipientEmailPlaceholder(recipient.email) && (
+                                  <span title={`${recipient.name} (${recipient.email})`}>
+                                    {recipient.name} ({recipient.email})
+                                  </span>
+                                )}
 
-                              {!recipient.name && (
-                                <span title={recipient.email}>{recipient.email}</span>
-                              )}
+                              {recipient.name &&
+                                isTemplateRecipientEmailPlaceholder(recipient.email) && (
+                                  <span title={recipient.name}>{recipient.name}</span>
+                                )}
+
+                              {!recipient.name &&
+                                !isTemplateRecipientEmailPlaceholder(recipient.email) && (
+                                  <span title={recipient.email}>{recipient.email}</span>
+                                )}
                             </span>
                           </CommandItem>
                         ))}
@@ -687,7 +766,7 @@ export const AddTemplateFieldsFormPartial = ({
                         <CardContent className="flex flex-col items-center justify-center px-6 py-4">
                           <p
                             className={cn(
-                              'text-muted-foreground group-data-[selected]:text-foreground font-signature flex items-center justify-center gap-x-1.5 text-lg font-normal',
+                              'flex items-center justify-center gap-x-1.5 font-signature text-lg font-normal text-muted-foreground group-data-[selected]:text-foreground',
                             )}
                           >
                             <Trans>Signature</Trans>
@@ -712,11 +791,11 @@ export const AddTemplateFieldsFormPartial = ({
                         <CardContent className="flex flex-col items-center justify-center px-6 py-4">
                           <p
                             className={cn(
-                              'text-muted-foreground group-data-[selected]:text-foreground flex items-center justify-center gap-x-1.5 text-sm font-normal',
+                              'flex items-center justify-center gap-x-1.5 text-sm font-normal text-muted-foreground group-data-[selected]:text-foreground',
                             )}
                           >
                             <Contact className="h-4 w-4" />
-                            Initials
+                            <Trans>Initials</Trans>
                           </p>
                         </CardContent>
                       </Card>
@@ -738,7 +817,7 @@ export const AddTemplateFieldsFormPartial = ({
                         <CardContent className="p-4">
                           <p
                             className={cn(
-                              'text-muted-foreground group-data-[selected]:text-foreground flex items-center justify-center gap-x-1.5 text-sm font-normal',
+                              'flex items-center justify-center gap-x-1.5 text-sm font-normal text-muted-foreground group-data-[selected]:text-foreground',
                             )}
                           >
                             <Mail className="h-4 w-4" />
@@ -764,7 +843,7 @@ export const AddTemplateFieldsFormPartial = ({
                         <CardContent className="p-4">
                           <p
                             className={cn(
-                              'text-muted-foreground group-data-[selected]:text-foreground flex items-center justify-center gap-x-1.5 text-sm font-normal',
+                              'flex items-center justify-center gap-x-1.5 text-sm font-normal text-muted-foreground group-data-[selected]:text-foreground',
                             )}
                           >
                             <User className="h-4 w-4" />
@@ -790,7 +869,7 @@ export const AddTemplateFieldsFormPartial = ({
                         <CardContent className="p-4">
                           <p
                             className={cn(
-                              'text-muted-foreground group-data-[selected]:text-foreground flex items-center justify-center gap-x-1.5 text-sm font-normal',
+                              'flex items-center justify-center gap-x-1.5 text-sm font-normal text-muted-foreground group-data-[selected]:text-foreground',
                             )}
                           >
                             <CalendarDays className="h-4 w-4" />
@@ -816,7 +895,7 @@ export const AddTemplateFieldsFormPartial = ({
                         <CardContent className="p-4">
                           <p
                             className={cn(
-                              'text-muted-foreground group-data-[selected]:text-foreground flex items-center justify-center gap-x-1.5 text-sm font-normal',
+                              'flex items-center justify-center gap-x-1.5 text-sm font-normal text-muted-foreground group-data-[selected]:text-foreground',
                             )}
                           >
                             <Type className="h-4 w-4" />
@@ -842,7 +921,7 @@ export const AddTemplateFieldsFormPartial = ({
                         <CardContent className="p-4">
                           <p
                             className={cn(
-                              'text-muted-foreground group-data-[selected]:text-foreground flex items-center justify-center gap-x-1.5 text-sm font-normal',
+                              'flex items-center justify-center gap-x-1.5 text-sm font-normal text-muted-foreground group-data-[selected]:text-foreground',
                             )}
                           >
                             <Hash className="h-4 w-4" />
@@ -868,11 +947,11 @@ export const AddTemplateFieldsFormPartial = ({
                         <CardContent className="p-4">
                           <p
                             className={cn(
-                              'text-muted-foreground group-data-[selected]:text-foreground flex items-center justify-center gap-x-1.5 text-sm font-normal',
+                              'flex items-center justify-center gap-x-1.5 text-sm font-normal text-muted-foreground group-data-[selected]:text-foreground',
                             )}
                           >
                             <Disc className="h-4 w-4" />
-                            Radio
+                            <Trans>Radio</Trans>
                           </p>
                         </CardContent>
                       </Card>
@@ -894,12 +973,11 @@ export const AddTemplateFieldsFormPartial = ({
                         <CardContent className="p-4">
                           <p
                             className={cn(
-                              'text-muted-foreground group-data-[selected]:text-foreground flex items-center justify-center gap-x-1.5 text-sm font-normal',
+                              'flex items-center justify-center gap-x-1.5 text-sm font-normal text-muted-foreground group-data-[selected]:text-foreground',
                             )}
                           >
                             <CheckSquare className="h-4 w-4" />
-                            {/* Not translated on purpose. */}
-                            Checkbox
+                            <Trans>Checkbox</Trans>
                           </p>
                         </CardContent>
                       </Card>
@@ -921,7 +999,7 @@ export const AddTemplateFieldsFormPartial = ({
                         <CardContent className="p-4">
                           <p
                             className={cn(
-                              'text-muted-foreground group-data-[selected]:text-foreground flex items-center justify-center gap-x-1.5 text-sm font-normal',
+                              'flex items-center justify-center gap-x-1.5 text-sm font-normal text-muted-foreground group-data-[selected]:text-foreground',
                             )}
                           >
                             <ChevronDown className="h-4 w-4" />

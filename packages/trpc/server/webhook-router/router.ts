@@ -3,79 +3,122 @@ import { deleteWebhookById } from '@documenso/lib/server-only/webhooks/delete-we
 import { editWebhook } from '@documenso/lib/server-only/webhooks/edit-webhook';
 import { getWebhookById } from '@documenso/lib/server-only/webhooks/get-webhook-by-id';
 import { getWebhooksByTeamId } from '@documenso/lib/server-only/webhooks/get-webhooks-by-team-id';
-import { getWebhooksByUserId } from '@documenso/lib/server-only/webhooks/get-webhooks-by-user-id';
+import { triggerTestWebhook } from '@documenso/lib/server-only/webhooks/trigger-test-webhook';
 
 import { authenticatedProcedure, router } from '../trpc';
+import { findWebhookCallsRoute } from './find-webhook-calls';
+import { resendWebhookCallRoute } from './resend-webhook-call';
 import {
-  ZCreateWebhookMutationSchema,
-  ZDeleteWebhookMutationSchema,
-  ZEditWebhookMutationSchema,
-  ZGetTeamWebhooksQuerySchema,
-  ZGetWebhookByIdQuerySchema,
+  ZCreateWebhookRequestSchema,
+  ZDeleteWebhookRequestSchema,
+  ZEditWebhookRequestSchema,
+  ZGetWebhookByIdRequestSchema,
+  ZTriggerTestWebhookRequestSchema,
 } from './schema';
 
 export const webhookRouter = router({
-  getWebhooks: authenticatedProcedure.query(async ({ ctx }) => {
-    return await getWebhooksByUserId(ctx.user.id);
+  calls: {
+    find: findWebhookCallsRoute,
+    resend: resendWebhookCallRoute,
+  },
+
+  getTeamWebhooks: authenticatedProcedure.query(async ({ ctx }) => {
+    ctx.logger.info({
+      input: {
+        teamId: ctx.teamId,
+      },
+    });
+
+    return await getWebhooksByTeamId(ctx.teamId, ctx.user.id);
   }),
 
-  getTeamWebhooks: authenticatedProcedure
-    .input(ZGetTeamWebhooksQuerySchema)
-    .query(async ({ ctx, input }) => {
-      const { teamId } = input;
-
-      return await getWebhooksByTeamId(teamId, ctx.user.id);
-    }),
-
   getWebhookById: authenticatedProcedure
-    .input(ZGetWebhookByIdQuerySchema)
+    .input(ZGetWebhookByIdRequestSchema)
     .query(async ({ input, ctx }) => {
-      const { id, teamId } = input;
+      const { id } = input;
+
+      ctx.logger.info({
+        input: {
+          id,
+        },
+      });
 
       return await getWebhookById({
         id,
         userId: ctx.user.id,
-        teamId,
+        teamId: ctx.teamId,
       });
     }),
 
   createWebhook: authenticatedProcedure
-    .input(ZCreateWebhookMutationSchema)
+    .input(ZCreateWebhookRequestSchema)
     .mutation(async ({ input, ctx }) => {
-      const { enabled, eventTriggers, secret, webhookUrl, teamId } = input;
+      const { enabled, eventTriggers, secret, webhookUrl } = input;
 
       return await createWebhook({
         enabled,
         secret,
         webhookUrl,
         eventTriggers,
-        teamId,
+        teamId: ctx.teamId,
         userId: ctx.user.id,
       });
     }),
 
   deleteWebhook: authenticatedProcedure
-    .input(ZDeleteWebhookMutationSchema)
+    .input(ZDeleteWebhookRequestSchema)
     .mutation(async ({ input, ctx }) => {
-      const { id, teamId } = input;
+      const { id } = input;
+
+      ctx.logger.info({
+        input: {
+          id,
+        },
+      });
 
       return await deleteWebhookById({
         id,
-        teamId,
+        teamId: ctx.teamId,
         userId: ctx.user.id,
       });
     }),
 
   editWebhook: authenticatedProcedure
-    .input(ZEditWebhookMutationSchema)
+    .input(ZEditWebhookRequestSchema)
     .mutation(async ({ input, ctx }) => {
-      const { id, teamId, ...data } = input;
+      const { id, ...data } = input;
+
+      ctx.logger.info({
+        input: {
+          id,
+        },
+      });
 
       return await editWebhook({
         id,
         data,
         userId: ctx.user.id,
-        teamId,
+        teamId: ctx.teamId,
+      });
+    }),
+
+  testWebhook: authenticatedProcedure
+    .input(ZTriggerTestWebhookRequestSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { id, event } = input;
+
+      ctx.logger.info({
+        input: {
+          id,
+          event,
+        },
+      });
+
+      return await triggerTestWebhook({
+        id,
+        event,
+        userId: ctx.user.id,
+        teamId: ctx.teamId,
       });
     }),
 });

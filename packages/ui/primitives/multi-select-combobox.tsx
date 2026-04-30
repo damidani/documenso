@@ -1,6 +1,7 @@
 import * as React from 'react';
 
 import type { MessageDescriptor } from '@lingui/core';
+import { t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { AnimatePresence } from 'framer-motion';
@@ -26,6 +27,7 @@ type MultiSelectComboboxProps<T = OptionValue> = {
   enableClearAllButton?: boolean;
   enableSearch?: boolean;
   className?: string;
+  contentClassName?: string;
   loading?: boolean;
   inputPlaceholder?: MessageDescriptor;
   onChange: (_values: T[]) => void;
@@ -42,10 +44,11 @@ type MultiSelectComboboxProps<T = OptionValue> = {
  * - Clear all button
  */
 export function MultiSelectCombobox<T = OptionValue>({
-  emptySelectionPlaceholder = 'Select values...',
+  emptySelectionPlaceholder = t`Select values...`,
   enableClearAllButton,
   enableSearch = true,
   className,
+  contentClassName,
   inputPlaceholder,
   loading,
   onChange,
@@ -149,7 +152,7 @@ export function MultiSelectCombobox<T = OptionValue>({
         )}
       </div>
 
-      <PopoverContent className="w-[200px] p-0">
+      <PopoverContent className={cn('z-[50000000] w-full p-0', contentClassName)}>
         <Command>
           {enableSearch && <CommandInput placeholder={inputPlaceholder && _(inputPlaceholder)} />}
           <CommandEmpty>

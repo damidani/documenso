@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { msg } from '@lingui/core/macro';
-import { Trans } from '@lingui/react/macro';
-import type { Document } from '@prisma/client';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router';
 import { useSearchParams } from 'react-router';
@@ -37,16 +36,19 @@ const ZRejectDocumentFormSchema = z.object({
 type TRejectDocumentFormSchema = z.infer<typeof ZRejectDocumentFormSchema>;
 
 export interface DocumentSigningRejectDialogProps {
-  document: Pick<Document, 'id'>;
+  documentId: number;
   token: string;
   onRejected?: (reason: string) => void | Promise<void>;
+  trigger?: React.ReactNode;
 }
 
 export function DocumentSigningRejectDialog({
-  document,
+  documentId,
   token,
   onRejected,
+  trigger,
 }: DocumentSigningRejectDialogProps) {
+  const { t } = useLingui();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -66,14 +68,14 @@ export function DocumentSigningRejectDialog({
   const onRejectDocument = async ({ reason }: TRejectDocumentFormSchema) => {
     try {
       await rejectDocumentWithToken({
-        documentId: document.id,
+        documentId,
         token,
         reason,
       });
 
       toast({
-        title: 'Document rejected',
-        description: 'The document has been successfully rejected.',
+        title: t`Document rejected`,
+        description: t`The document has been successfully rejected.`,
         duration: 5000,
       });
 
@@ -86,8 +88,8 @@ export function DocumentSigningRejectDialog({
       }
     } catch (err) {
       toast({
-        title: 'Error',
-        description: 'An error occurred while rejecting the document. Please try again.',
+        title: t`Error`,
+        description: t`An error occurred while rejecting the document. Please try again.`,
         variant: 'destructive',
         duration: 5000,
       });
@@ -109,9 +111,11 @@ export function DocumentSigningRejectDialog({
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline">
-          <Trans>Reject Document</Trans>
-        </Button>
+        {trigger ?? (
+          <Button variant="outline">
+            <Trans>Reject Document</Trans>
+          </Button>
+        )}
       </DialogTrigger>
 
       <DialogContent>
@@ -138,7 +142,7 @@ export function DocumentSigningRejectDialog({
                     <Textarea
                       {...field}
                       rows={4}
-                      placeholder="Please provide a reason for rejecting this document"
+                      placeholder={t`Please provide a reason for rejecting this document`}
                       disabled={form.formState.isSubmitting}
                     />
                   </FormControl>
