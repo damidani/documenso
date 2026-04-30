@@ -105,6 +105,10 @@ declare namespace NodeJS {
     /**
      * Cloudflare Turnstile environment variables
      */
+    NEXT_PUBLIC_APP_NAME?: string;
+    NEXT_PUBLIC_APP_LOGO_URL?: string;
+    NEXT_PUBLIC_SUPPORT_EMAIL?: string;
+
     NEXT_PUBLIC_TURNSTILE_SITE_KEY?: string;
     NEXT_PRIVATE_TURNSTILE_SECRET_KEY?: string;
 

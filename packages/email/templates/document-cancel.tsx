@@ -3,6 +3,7 @@ import { useLingui } from '@lingui/react';
 
 import { Body, Container, Head, Hr, Html, Img, Preview, Section } from '../components';
 import { useBranding } from '../providers/branding';
+import { APP_LOGO_URL } from '@documenso/lib/constants/app';
 import type { TemplateDocumentCancelProps } from '../template-components/template-document-cancel';
 import { TemplateDocumentCancel } from '../template-components/template-document-cancel';
 import { TemplateFooter } from '../template-components/template-footer';
@@ -11,7 +12,7 @@ export type DocumentCancelEmailTemplateProps = Partial<TemplateDocumentCancelPro
 
 export const DocumentCancelTemplate = ({
   inviterName = 'Lucas Smith',
-  inviterEmail = 'lucas@documenso.com',
+  inviterEmail = 'lucas@hcloud.fr',
   documentName = 'Open Source Pledge.pdf',
   assetBaseUrl = 'http://localhost:3002',
   cancellationReason,
@@ -38,8 +39,8 @@ export const DocumentCancelTemplate = ({
                 <Img src={branding.brandingLogo} alt="Branding Logo" className="mb-4 h-6" />
               ) : (
                 <Img
-                  src={getAssetUrl('/static/logo.png')}
-                  alt="Documenso Logo"
+                  src={APP_LOGO_URL || getAssetUrl('/static/logo.png')}
+                  alt="Logo"
                   className="mb-4 h-6"
                 />
               )}

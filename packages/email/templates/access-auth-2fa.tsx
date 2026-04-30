@@ -3,6 +3,7 @@ import { useLingui } from '@lingui/react';
 
 import { Body, Container, Head, Html, Img, Preview, Section } from '../components';
 import { useBranding } from '../providers/branding';
+import { APP_LOGO_URL } from '@documenso/lib/constants/app';
 import { TemplateAccessAuth2FA } from '../template-components/template-access-auth-2fa';
 import { TemplateFooter } from '../template-components/template-footer';
 
@@ -46,8 +47,8 @@ export const AccessAuth2FAEmailTemplate = ({
                 <Img src={branding.brandingLogo} alt="Branding Logo" className="mb-4 h-6" />
               ) : (
                 <Img
-                  src={getAssetUrl('/static/logo.png')}
-                  alt="Documenso Logo"
+                  src={APP_LOGO_URL || getAssetUrl('/static/logo.png')}
+                  alt="Logo"
                   className="mb-4 h-6"
                 />
               )}
