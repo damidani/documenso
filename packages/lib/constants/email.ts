@@ -1,7 +1,9 @@
 import { env } from '../utils/env';
 
-export const FROM_ADDRESS = env('NEXT_PRIVATE_SMTP_FROM_ADDRESS') || 'noreply@documenso.com';
-export const FROM_NAME = env('NEXT_PRIVATE_SMTP_FROM_NAME') || 'Documenso';
+export const FROM_ADDRESS = env('NEXT_PRIVATE_SMTP_FROM_ADDRESS') || 'noreply@hcloud.fr';
+import { APP_NAME } from './app';
+
+export const FROM_NAME = env('NEXT_PRIVATE_SMTP_FROM_NAME') || APP_NAME;
 
 export const DOCUMENSO_INTERNAL_EMAIL = {
   name: FROM_NAME,

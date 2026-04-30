@@ -15,6 +15,7 @@ import { DateTime } from 'luxon';
 import { Link, useRevalidator } from 'react-router';
 import { match } from 'ts-pattern';
 
+import { APP_NAME } from '@documenso/lib/constants/app';
 import type { TCachedLicense } from '@documenso/lib/types/license';
 import { SUBSCRIPTION_CLAIM_FEATURE_FLAGS } from '@documenso/lib/types/subscription';
 import { trpc } from '@documenso/trpc/react';
@@ -68,7 +69,7 @@ export const AdminLicenseCard = ({ licenseData }: AdminLicenseCardProps) => {
               )}
 
               <Link
-                to="https://docs.documenso.com/users/licenses/enterprise-edition"
+                to="https://hcloud.fr/docs/users/licenses/enterprise-edition"
                 target="_blank"
                 className="flex flex-row items-center text-xs text-muted-foreground hover:text-muted-foreground/80"
               >
@@ -95,7 +96,7 @@ export const AdminLicenseCard = ({ licenseData }: AdminLicenseCardProps) => {
         </div>
 
         <h3 className="text-primary-forground mb-2 flex items-end text-sm font-medium leading-tight">
-          <Trans>Documenso License</Trans>
+          <Trans>{APP_NAME} License</Trans>
         </h3>
 
         {match(license.status)

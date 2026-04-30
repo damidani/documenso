@@ -7,6 +7,7 @@ import { Link } from 'react-router';
 
 import LogoImage from '@documenso/assets/logo.png';
 import { authClient } from '@documenso/auth/client';
+import { APP_NAME } from '@documenso/lib/constants/app';
 import { useSession } from '@documenso/lib/client-only/providers/session';
 import { isPersonalLayout } from '@documenso/lib/utils/organisations';
 import { trpc } from '@documenso/trpc/react';
@@ -86,7 +87,7 @@ export const AppNavMobile = ({ isMenuOpen, onMenuOpenChange }: AppNavMobileProps
         <Link to="/" onClick={handleMenuItemClick}>
           <img
             src={LogoImage}
-            alt="Documenso Logo"
+            alt={`${APP_NAME} Logo`}
             className="dark:invert"
             width={170}
             height={25}
@@ -124,7 +125,7 @@ export const AppNavMobile = ({ isMenuOpen, onMenuOpenChange }: AppNavMobileProps
           </div>
 
           <p className="text-sm text-muted-foreground">
-            © {new Date().getFullYear()} Documenso, Inc.
+            © {new Date().getFullYear()} {APP_NAME}, Inc.
             <br />
             <Trans>All rights reserved.</Trans>
           </p>
