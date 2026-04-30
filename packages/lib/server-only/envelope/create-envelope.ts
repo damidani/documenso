@@ -480,7 +480,7 @@ export const createEnvelope = async ({
           uniqueRecipientRefs.entries(),
           ([recipientIndex, name]) => ({
             envelopeId: envelope.id,
-            email: `recipient.${recipientIndex}@hcloud.fr`,
+            email: `recipient.${recipientIndex}@documenso.com`,
             name,
             role: RecipientRole.SIGNER,
             signingOrder: recipientIndex,

@@ -1,7 +1,5 @@
 import { Trans } from '@lingui/react/macro';
 import { AlertTriangleIcon, KeyRoundIcon } from 'lucide-react';
-
-import { APP_NAME } from '@documenso/lib/constants/app';
 import { Link } from 'react-router';
 import { match } from 'ts-pattern';
 
@@ -45,12 +43,12 @@ export const AdminLicenseStatusBanner = ({ license }: AdminLicenseStatusBannerPr
             .with('UNAUTHORIZED', () =>
               license ? (
                 <Trans>
-                  Invalid License Type - Your {APP_NAME} instance is using features that are not part
+                  Invalid License Type - Your Documenso instance is using features that are not part
                   of your license.
                 </Trans>
               ) : (
                 <Trans>
-                  Missing License - Your {APP_NAME} instance is using features that require a
+                  Missing License - Your Documenso instance is using features that require a
                   license.
                 </Trans>
               ),
@@ -69,7 +67,7 @@ export const AdminLicenseStatusBanner = ({ license }: AdminLicenseStatusBannerPr
           })}
           asChild
         >
-          <Link to="https://hcloud.fr/docs/users/licenses/enterprise-edition" target="_blank">
+          <Link to="https://docs.documenso.com/users/licenses/enterprise-edition" target="_blank">
             <KeyRoundIcon className="mr-1.5 h-4 w-4" />
             <Trans>See Documentation</Trans>
           </Link>

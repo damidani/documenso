@@ -4,7 +4,6 @@ import { Trans } from '@lingui/react/macro';
 
 import { Body, Container, Head, Hr, Html, Img, Link, Preview, Section, Text } from '../components';
 import { useBranding } from '../providers/branding';
-import { APP_LOGO_URL, SUPPORT_EMAIL } from '@documenso/lib/constants/app';
 import { TemplateFooter } from '../template-components/template-footer';
 import type { TemplateResetPasswordProps } from '../template-components/template-reset-password';
 import { TemplateResetPassword } from '../template-components/template-reset-password';
@@ -13,7 +12,7 @@ export type ResetPasswordTemplateProps = Partial<TemplateResetPasswordProps>;
 
 export const ResetPasswordTemplate = ({
   userName = 'Lucas Smith',
-  userEmail = 'lucas@hcloud.fr',
+  userEmail = 'lucas@documenso.com',
   assetBaseUrl = 'http://localhost:3002',
 }: ResetPasswordTemplateProps) => {
   const { _ } = useLingui();
@@ -38,8 +37,8 @@ export const ResetPasswordTemplate = ({
                 <Img src={branding.brandingLogo} alt="Branding Logo" className="mb-4 h-6" />
               ) : (
                 <Img
-                  src={APP_LOGO_URL || getAssetUrl('/static/logo.png')}
-                  alt="Logo"
+                  src={getAssetUrl('/static/logo.png')}
+                  alt="Documenso Logo"
                   className="mb-4 h-6"
                 />
               )}
@@ -73,7 +72,7 @@ export const ResetPasswordTemplate = ({
                 <Trans>
                   Didn't request a password change? We are here to help you secure your account,
                   just{' '}
-                  <Link className="font-normal text-documenso-700" href={`mailto:${SUPPORT_EMAIL}`}>
+                  <Link className="font-normal text-documenso-700" href="mailto:hi@documenso.com">
                     contact us
                   </Link>
                   .

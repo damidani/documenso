@@ -3,7 +3,6 @@ import { useLingui } from '@lingui/react';
 
 import { Body, Container, Head, Html, Img, Preview, Section } from '../components';
 import { useBranding } from '../providers/branding';
-import { APP_LOGO_URL } from '@documenso/lib/constants/app';
 import { TemplateFooter } from '../template-components/template-footer';
 import type { TemplateForgotPasswordProps } from '../template-components/template-forgot-password';
 import { TemplateForgotPassword } from '../template-components/template-forgot-password';
@@ -11,7 +10,7 @@ import { TemplateForgotPassword } from '../template-components/template-forgot-p
 export type ForgotPasswordTemplateProps = Partial<TemplateForgotPasswordProps>;
 
 export const ForgotPasswordTemplate = ({
-  resetPasswordLink = 'https://hcloud.fr',
+  resetPasswordLink = 'https://documenso.com',
   assetBaseUrl = 'http://localhost:3002',
 }: ForgotPasswordTemplateProps) => {
   const { _ } = useLingui();
@@ -36,8 +35,8 @@ export const ForgotPasswordTemplate = ({
                 <Img src={branding.brandingLogo} alt="Branding Logo" className="mb-4 h-6" />
               ) : (
                 <Img
-                  src={APP_LOGO_URL || getAssetUrl('/static/logo.png')}
-                  alt="Logo"
+                  src={getAssetUrl('/static/logo.png')}
+                  alt="Documenso Logo"
                   className="mb-4 h-6"
                 />
               )}

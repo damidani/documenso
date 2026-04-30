@@ -4,7 +4,6 @@ import { Trans } from '@lingui/react/macro';
 
 import { Body, Container, Head, Hr, Html, Img, Preview, Section, Text } from '../components';
 import { useBranding } from '../providers/branding';
-import { APP_LOGO_URL } from '@documenso/lib/constants/app';
 import { TemplateFooter } from '../template-components/template-footer';
 import TemplateImage from '../template-components/template-image';
 
@@ -19,16 +18,16 @@ export type OrganisationLeaveEmailProps = {
 
 export const OrganisationLeaveEmailTemplate = ({
   assetBaseUrl = 'http://localhost:3002',
-  baseUrl = 'https://hcloud.fr',
+  baseUrl = 'https://documenso.com',
   memberName = 'John Doe',
-  memberEmail = 'johndoe@hcloud.fr',
+  memberEmail = 'johndoe@documenso.com',
   organisationName = 'Organisation Name',
   organisationUrl = 'demo',
 }: OrganisationLeaveEmailProps) => {
   const { _ } = useLingui();
   const branding = useBranding();
 
-  const previewText = msg`A member has left your organisation`;
+  const previewText = msg`A member has left your organisation on Documenso`;
 
   return (
     <Html>

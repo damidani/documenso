@@ -3,7 +3,6 @@ import { useLingui } from '@lingui/react';
 
 import { Body, Container, Head, Html, Img, Preview, Section } from '../components';
 import { useBranding } from '../providers/branding';
-import { APP_LOGO_URL } from '@documenso/lib/constants/app';
 import type { TemplateConfirmationEmailProps } from '../template-components/template-confirmation-email';
 import { TemplateConfirmationEmail } from '../template-components/template-confirmation-email';
 import { TemplateFooter } from '../template-components/template-footer';
@@ -33,8 +32,8 @@ export const ConfirmEmailTemplate = ({
                 <Img src={branding.brandingLogo} alt="Branding Logo" className="mb-4 h-6" />
               ) : (
                 <Img
-                  src={APP_LOGO_URL || getAssetUrl('/static/logo.png')}
-                  alt="Logo"
+                  src={getAssetUrl('/static/logo.png')}
+                  alt="Documenso Logo"
                   className="mb-4 h-6"
                 />
               )}
