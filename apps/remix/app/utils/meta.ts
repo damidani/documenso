@@ -35,10 +35,7 @@ export const appMetaTags = (title?: MessageDescriptor) => {
       property: 'og:description',
       content: description,
     },
-    {
-      property: 'og:image',
-      content: `${NEXT_PUBLIC_WEBAPP_URL()}/opengraph-image.jpg`,
-    },
+
     {
       property: 'og:type',
       content: 'website',
@@ -55,9 +52,6 @@ export const appMetaTags = (title?: MessageDescriptor) => {
       name: 'twitter:description',
       content: description,
     },
-    {
-      name: 'twitter:image',
-      content: `${NEXT_PUBLIC_WEBAPP_URL()}/opengraph-image.jpg`,
-    },
+  
   ];
 };
