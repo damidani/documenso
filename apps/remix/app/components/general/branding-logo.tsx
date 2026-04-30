@@ -1,12 +1,21 @@
 import type { SVGAttributes } from 'react';
 
-export type LogoProps = SVGAttributes<SVGSVGElement>;
-
 import { APP_LOGO_URL } from '@documenso/lib/constants/app';
 
-export const BrandingLogo = ({ ...props }: LogoProps) => {
+export type LogoProps = SVGAttributes<SVGSVGElement>;
+
+export const BrandingLogo = ({ className, style, width, height, ...props }: LogoProps) => {
   if (APP_LOGO_URL) {
-    return <img src={APP_LOGO_URL} alt="Logo" {...props} />;
+    return (
+      <img
+        src={APP_LOGO_URL}
+        alt="Logo"
+        className={className}
+        style={style}
+        width={width}
+        height={height}
+      />
+    );
   }
 
   return (
